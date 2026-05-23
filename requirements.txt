@@ -1,0 +1,8 @@
+torch>=2.0
+numpy
+matplotlib
+pyyaml
+wandb
+neuralop @ git+https://github.com/neuraloperator/neuraloperator.git
+torchinfo
+pillow
