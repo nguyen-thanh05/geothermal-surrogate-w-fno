@@ -6,7 +6,7 @@
 #SBATCH --mem=96G
 #SBATCH --time=11:55:00
 #SBATCH --account=def-juliana2
-#SBATCH --output=/home/thanh2/projects/def-juliana2/thanh2/master-research/AR_FNO/logs/%x_%j.out
+#SBATCH --output=/home/thanh2/projects/def-juliana2/thanh2/master-research/geothermal-surrogate-w-fno/logs/%x_%j.out
 #SBATCH --mail-user=thanh2@ualberta.ca
 #SBATCH --mail-type=ALL
 
