@@ -22,7 +22,7 @@ training:
     lr: 8.0e-4
     num_epochs: 3000
     test_batch_size: 4
-  weight_decay: 1.0e-5
+  weight_decay: 1.0e-4
   ema_decay: 0.9995
   log_every: 20
   grad_clip_norm: 8.0
@@ -58,6 +58,6 @@ logging:
 
 checkpoints:
   running_dir: "checkpoints/running/"
-  running_fmt: "fno_onestep_{epoch}.pth"
-  final_path: "checkpoints/fno_onestep_final.pth"
-  resume_path: "checkpoints/running/fno_homo_resume.pt"
+  running_fmt: "fno_m8x32x16_h64_homo_{epoch}.pth"
+  final_path: "checkpoints/fno_m8x32x16_h64_homo_final.pth"
+  resume_path: "checkpoints/running/fno_m8x32x16_h64_homo_resume.pt"

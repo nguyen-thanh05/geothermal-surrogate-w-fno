@@ -87,19 +87,24 @@ if __name__ == "__main__":
         device = torch.device("cpu")
 
     x = torch.randn(1, 6, 16, 64, 32).to(device)
+    from torchinfo import summary
 
     model_d3 = UNet3D(in_channels=6, out_channels=4, hidden_channels=64, depth=3).to(device)
     out = model_d3(x)
     total = sum(p.numel() for p in model_d3.parameters())
     print(f"UNet3D depth=3 — Input: {x.shape}, Output: {out.shape}, Params: {total:,}")
+    
+    summary(model_d3, input_size=x.shape)
 
     model_d4 = UNet3D(in_channels=6, out_channels=4, hidden_channels=64, depth=4).to(device)
     out = model_d4(x)
     total = sum(p.numel() for p in model_d4.parameters())
     print(f"UNet3D depth=4 — Input: {x.shape}, Output: {out.shape}, Params: {total:,}")
+    summary(model_d4, input_size=x.shape)
 
     model_d4_narrow = UNet3D(in_channels=6, out_channels=4, hidden_channels=64,
                              depth=4, channel_multipliers=[1, 2, 4, 4, 8]).to(device)
     out = model_d4_narrow(x)
     total = sum(p.numel() for p in model_d4_narrow.parameters())
     print(f"UNet3D depth=4 narrow — Input: {x.shape}, Output: {out.shape}, Params: {total:,}")
+    summary(model_d4_narrow, input_size=x.shape)

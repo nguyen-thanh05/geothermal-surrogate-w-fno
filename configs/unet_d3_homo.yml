@@ -21,7 +21,7 @@ training:
     lr: 8.0e-4
     num_epochs: 3000
     test_batch_size: 4
-  weight_decay: 1.0e-5
+  weight_decay: 1.0e-4
   ema_decay: 0.9995
   log_every: 20
   grad_clip_norm: 8.0
@@ -57,6 +57,6 @@ logging:
 
 checkpoints:
   running_dir: "checkpoints/running/"
-  running_fmt: "unet_onestep_{epoch}.pth"
-  final_path: "checkpoints/unet_onestep_final.pth"
-  resume_path: "checkpoints/running/unet_homo_resume.pt"
+  running_fmt: "unet_d3_homo_{epoch}.pth"
+  final_path: "checkpoints/unet_d3_homo_final.pth"
+  resume_path: "checkpoints/running/unet_d3_homo_resume.pt"

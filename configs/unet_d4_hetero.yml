@@ -7,7 +7,7 @@ model:
   in_channels: 10   # 4 state + 4 static + 1 rate + 1 mask
   out_channels: 4
   hidden_channels: 64
-  depth: 3
+  depth: 4
   aux_channels: 16
 
 training:
@@ -57,6 +57,6 @@ logging:
 
 checkpoints:
   running_dir: "checkpoints/running/"
-  running_fmt: "unet_d3_hetero_{epoch}.pth"
-  final_path: "checkpoints/unet_d3_hetero_final.pth"
-  resume_path: "checkpoints/running/unet_d3_hetero_resume.pt"
+  running_fmt: "unet_d4_hetero_{epoch}.pth"
+  final_path: "checkpoints/unet_d4_hetero_final.pth"
+  resume_path: "checkpoints/running/unet_d4_hetero_resume.pt"

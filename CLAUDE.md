@@ -24,7 +24,7 @@ Two data variants: **homogeneous** (fixed porosity/permeability) and **heterogen
 python training/train.py --config configs/loglo_hetero.yml --seed 42
 
 # HPC (larger batch, data loaded to memory)
-python training/train.py --config configs/fno_homo.yml --hpc true --seed 42
+python training/train.py --config configs/fno_m8x32x16_h64_homo.yml --hpc true --seed 42
 ```
 
 ### Inference (single trajectory or full test set)
@@ -40,10 +40,10 @@ python inference/infer_hetero.py --config configs/loglo_hetero.yml --checkpoint 
 python slurm/launch.py
 
 # CLI mode (for scripting / reproducibility)
-python slurm/launch.py --models fno,unet3d --variants homo --seeds '{"fno":"42,123","unet3d":"42"}'
+python slurm/launch.py --models fno_m8x32x16_h64,unet_d3 --variants homo --seeds '{"fno_m8x32x16_h64":"42,123","unet_d3":"42"}'
 
 # Direct single experiment (3 chained jobs)
-sbatch --export=ALL,CONFIG=configs/fno_homo.yml,SEED=42 slurm/train.sh
+sbatch --export=ALL,CONFIG=configs/fno_m8x32x16_h64_homo.yml,SEED=42 slurm/train.sh
 
 # All baselines with seed 42
 bash slurm/submit_all.sh
@@ -95,7 +95,25 @@ pip install -r requirements.txt   # torch, neuralop, wandb, matplotlib, pyyaml
 
 ## Config structure
 
-YAML configs in `configs/` follow naming: `{model}_{variant}.yml`. Each config has sections: `data`, `model`, `training` (with `local`/`hpc` sub-configs), `loss`, `logging`, `checkpoints`. The `model.type` field (`fno`, `loglo`, `unet3d`) selects both the model class and adapter.
+YAML configs in `configs/` follow naming: `{model}_{hyperparams}_{variant}.yml`. Hyperparams encode key architecture knobs visible at a glance:
+- FNO: `fno_m{modes}x_h{hidden}_{variant}.yml` — e.g. `fno_m8x32x16_h64_homo.yml`, `fno_m4x16x8_h128_hetero.yml`
+- UNet: `unet_d{depth}_{variant}.yml` — e.g. `unet_d3_homo.yml`, `unet_d4_hetero.yml`
+- LOGLO: `loglo_{variant}.yml` (unchanged)
+
+Each config has sections: `data`, `model`, `training` (with `local`/`hpc` sub-configs), `loss`, `logging`, `checkpoints`. The `model.type` field (`fno`, `loglo`, `unet3d`) selects both the model class and adapter.
+
+### Current experiment matrix
+
+| Model key | Modes | Layers | Hidden | Depth |
+|-----------|-------|--------|--------|-------|
+| `fno_m8x32x16_h64` | [8,32,16] | 4 | 64 | — |
+| `fno_m4x16x8_h64` | [4,16,8] | 5 | 64 | — |
+| `fno_m4x16x8_h128` | [4,16,8] | 5 | 128 | — |
+| `unet_d3` | — | — | 64 | 3 |
+| `unet_d4` | — | — | 64 | 4 |
+| `loglo` | — | 5 blocks | 64 | — |
+
+Each model key has both `_homo.yml` and `_hetero.yml` configs (12 total).
 
 ## Key conventions
 

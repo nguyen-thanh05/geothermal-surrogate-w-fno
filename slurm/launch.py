@@ -8,9 +8,12 @@ import subprocess
 import sys
 
 MODELS = {
-    'loglo':  {'display': 'LOGLO_FNO', 'config_prefix': 'loglo'},
-    'fno':    {'display': 'FNO',       'config_prefix': 'fno'},
-    'unet3d': {'display': 'UNet3D',    'config_prefix': 'unet'},
+    'loglo':             {'display': 'LOGLO_FNO',         'config_prefix': 'loglo'},
+    'fno_m8x32x16_h64':  {'display': 'FNO m8x32x16 h64', 'config_prefix': 'fno_m8x32x16_h64'},
+    'fno_m4x16x8_h64':   {'display': 'FNO m4x16x8 h64',  'config_prefix': 'fno_m4x16x8_h64'},
+    'fno_m4x16x8_h128':  {'display': 'FNO m4x16x8 h128', 'config_prefix': 'fno_m4x16x8_h128'},
+    'unet_d3':           {'display': 'UNet3D d3',         'config_prefix': 'unet_d3'},
+    'unet_d4':           {'display': 'UNet3D d4',         'config_prefix': 'unet_d4'},
 }
 
 VARIANTS = ['homo', 'hetero']
