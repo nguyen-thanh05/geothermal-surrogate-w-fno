@@ -121,6 +121,8 @@ def run_training(cfg, args, resume_path=None):
     warmup_steps = cfg['training'].get('warmup_steps', 0)
     min_lr = cfg['training'].get('min_lr', 1e-5)
     use_pushforward = cfg['training'].get('use_pushforward', True)
+    artifact_start_epoch = cfg['logging'].get('artifact_start_epoch', 2000)
+    artifact_interval = cfg['logging'].get('artifact_interval', 500)
 
     use_mse = cfg['loss'].get('use_mse', True)
     mse_weight = cfg['loss'].get('mse_weight', 1.0)
@@ -279,7 +281,7 @@ def run_training(cfg, args, resume_path=None):
     if WRITER:
         run_name = f"{model_type}-{variant}-seed{seed}"
         init_kwargs = dict(
-            project=cfg['logging'].get('wandb_project', 'ARFNO'),
+            project=cfg['logging'].get('wandb_project', f'LOGLOFNO_{variant.upper()}_exp'),
             entity=cfg['logging'].get('wandb_entity', None),
             name=run_name,
             config=cfg,
@@ -490,7 +492,7 @@ def run_training(cfg, args, resume_path=None):
                 'aux_head': aux_head_model.state_dict(),
                 'ema_aux': ema_aux.state_dict(),
             }, ckpt_path)
-            if WRITER:
+            if WRITER and (epoch + 1) >= artifact_start_epoch and (epoch + 1) % artifact_interval == 0:
                 art = wandb.Artifact(
                     f"{model_type}-{variant}-epoch{epoch + 1}", type="model")
                 art.add_file(ckpt_path)

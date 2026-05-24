@@ -122,4 +122,5 @@ Each model key has both `_homo.yml` and `_hetero.yml` configs (12 total).
 - Well coordinates at layers 0-1 in action are zeroed out before model input (non-perforated layers).
 - Checkpoint dict keys: `model`, `ema_model`, `aux_head`, `ema_aux`.
 - Checkpoint paths auto-include seed subdirectory: `checkpoints/running/seed42/`, `checkpoints/seed42/`.
-- W&B project: "ARFNO".
+- W&B projects: `LOGLOFNO_HOMO_exp` (homogeneous) / `LOGLOFNO_HETERO_exp` (heterogeneous).
+- W&B artifact uploads gated by `logging.artifact_start_epoch` (default 2000) and `logging.artifact_interval` (default 500). Local checkpoints still save every `log_every * 2` epochs. Final model always uploaded.

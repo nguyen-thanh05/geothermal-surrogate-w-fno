@@ -55,8 +55,10 @@ loss:
 
 logging:
   writer: true
-  wandb_project: "ARFNO"
+  wandb_project: "LOGLOFNO_HOMO_exp"
   wandb_entity: null
+  artifact_start_epoch: 2000
+  artifact_interval: 500
 
 checkpoints:
   running_dir: "checkpoints/running/"

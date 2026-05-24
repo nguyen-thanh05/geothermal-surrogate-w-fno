@@ -6,6 +6,7 @@ class FNOWrapper(nn.Module):
     def __init__(self, n_modes, in_channels, out_channels, n_layers,
                  hidden_channels, **kwargs):
         super().__init__()
+        self.out_channels = out_channels
         self.fno = FNO(
             n_modes=tuple(n_modes),
             in_channels=in_channels,
@@ -15,4 +16,4 @@ class FNOWrapper(nn.Module):
         )
 
     def forward(self, x):
-        return self.fno(x)
+        return self.fno(x) + x[:, :self.out_channels]
