@@ -52,6 +52,7 @@ bash slurm/submit_all.sh
 ### Install
 ```bash
 pip install -r requirements.txt   # torch, neuralop, wandb, matplotlib, pyyaml
+pip install -e .                  # register local packages so imports resolve
 ```
 
 ## Architecture
