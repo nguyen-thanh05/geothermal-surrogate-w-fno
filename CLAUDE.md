@@ -36,8 +36,17 @@ python inference/infer_hetero.py --config configs/loglo_hetero.yml --checkpoint 
 
 ### HPC (SLURM)
 ```bash
-sbatch slurm/loglo_hetero.sh     # single model
-bash slurm/submit_all.sh         # all baselines (FNO + UNet, homo + hetero)
+# Interactive launcher (select models, variants, seeds)
+python slurm/launch.py
+
+# CLI mode (for scripting / reproducibility)
+python slurm/launch.py --models fno,unet3d --variants homo --seeds '{"fno":"42,123","unet3d":"42"}'
+
+# Direct single experiment (3 chained jobs)
+sbatch --export=ALL,CONFIG=configs/fno_homo.yml,SEED=42 slurm/train.sh
+
+# All baselines with seed 42
+bash slurm/submit_all.sh
 ```
 
 ### Install
@@ -79,6 +88,11 @@ pip install -r requirements.txt   # torch, neuralop, wandb, matplotlib, pyyaml
 - `radial_binned_spectral_loss`: 3D FFT error binned into low/mid/high frequency bands.
 - `mean_field_pressure_loss`: MSE on spatially-averaged pressure (channels 2,3).
 
+### HPC / SLURM infrastructure (`slurm/`)
+- **`train.sh`**: Parameterized SLURM template. Receives `CONFIG` and `SEED` via `--export=ALL,CONFIG=...,SEED=...`. All resource directives (1x H100-40GB, 96G RAM, ~12h wall time) live here.
+- **`launch.py`**: Interactive launcher + CLI mode. Prompts for models/variants/seeds, submits 3 chained jobs per experiment. To add a new model: add entry to `MODELS` dict in `launch.py` + create its config YAML.
+- **`submit_all.sh`** / **`submit_fno.sh`**: Convenience wrappers that submit all baselines with seed 42.
+
 ## Config structure
 
 YAML configs in `configs/` follow naming: `{model}_{variant}.yml`. Each config has sections: `data`, `model`, `training` (with `local`/`hpc` sub-configs), `loss`, `logging`, `checkpoints`. The `model.type` field (`fno`, `loglo`, `unet3d`) selects both the model class and adapter.
@@ -88,4 +102,5 @@ YAML configs in `configs/` follow naming: `{model}_{variant}.yml`. Each config h
 - Heterogeneous mode adds 4 static channels; homogeneous has `in_channels=6` (4 state + rate + mask), heterogeneous has `in_channels=10` (4 state + 4 static + rate + mask). LOGLO counts differently: `in_dim=4`/`8` for state, `action_channels=2`/`6`.
 - Well coordinates at layers 0-1 in action are zeroed out before model input (non-perforated layers).
 - Checkpoint dict keys: `model`, `ema_model`, `aux_head`, `ema_aux`.
+- Checkpoint paths auto-include seed subdirectory: `checkpoints/running/seed42/`, `checkpoints/seed42/`.
 - W&B project: "ARFNO".

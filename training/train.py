@@ -4,6 +4,20 @@ import yaml
 from training.loop import run_training
 
 
+def _inject_seed_into_paths(cfg, seed):
+    ckpt = cfg['checkpoints']
+    seed_dir = f'seed{seed}'
+
+    ckpt['running_dir'] = os.path.join(ckpt['running_dir'], seed_dir, '')
+
+    final_dir, final_name = os.path.split(ckpt['final_path'])
+    ckpt['final_path'] = os.path.join(final_dir, seed_dir, final_name)
+
+    if 'resume_path' in ckpt:
+        resume_name = os.path.basename(ckpt['resume_path'])
+        ckpt['resume_path'] = os.path.join(ckpt['running_dir'], resume_name)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Unified training entry point')
     parser.add_argument('--config', type=str, required=True,
@@ -16,6 +30,8 @@ def main():
 
     with open(args.config, 'r') as f:
         cfg = yaml.safe_load(f)
+
+    _inject_seed_into_paths(cfg, args.seed)
 
     running_dir = cfg['checkpoints']['running_dir']
     resume_path = cfg['checkpoints'].get('resume_path',
