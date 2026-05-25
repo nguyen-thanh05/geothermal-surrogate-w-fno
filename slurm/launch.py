@@ -17,7 +17,7 @@ MODELS = {
 }
 
 VARIANTS = ['homo', 'hetero']
-JOBS_PER_CHAIN = 3
+JOBS_PER_CHAIN = 2
 SLURM_TEMPLATE = 'slurm/train.sh'
 
 
