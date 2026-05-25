@@ -29,13 +29,19 @@ from training.utils import (
 from training.model_adapters import create_adapter
 
 
+def _clean_state_dict(module):
+    sd = module.state_dict()
+    sd.pop('_metadata', None)
+    return sd
+
+
 def _save_weights_checkpoint(path, *, model, ema_model, aux_head, ema_aux,
                              epoch, global_step, rng_states, wandb_run_id):
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
     tmp_path = path + '.tmp'
     torch.save({
-        'model': model.state_dict(),
-        'ema_model': ema_model.state_dict(),
+        'model': _clean_state_dict(model),
+        'ema_model': _clean_state_dict(ema_model),
         'aux_head': aux_head.state_dict(),
         'ema_aux': ema_aux.state_dict(),
         'epoch': epoch,
@@ -325,6 +331,8 @@ def run_training(cfg, args, resume_path=None):
 
     # --- Apply resume state ---
     if _resume_ckpt is not None:
+        _resume_ckpt['model'].pop('_metadata', None)
+        _resume_ckpt['ema_model'].pop('_metadata', None)
         model.load_state_dict(_resume_ckpt['model'])
         ema_model.load_state_dict(_resume_ckpt['ema_model'])
         aux_head_model.load_state_dict(_resume_ckpt['aux_head'])

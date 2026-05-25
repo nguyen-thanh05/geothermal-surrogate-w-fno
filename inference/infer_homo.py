@@ -90,6 +90,7 @@ def load_model(cfg, checkpoint_path, device, use_ema=False):
     key = 'ema_model' if use_ema else 'model'
     aux_key = 'ema_aux' if use_ema else 'aux_head'
     print(f"Loading {'EMA' if use_ema else 'non-EMA'} weights")
+    ckpt[key].pop('_metadata', None)
     model.load_state_dict(ckpt[key])
     aux_head_model.load_state_dict(ckpt[aux_key])
     model.to(device)

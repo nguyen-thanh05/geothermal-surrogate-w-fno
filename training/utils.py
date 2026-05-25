@@ -59,7 +59,7 @@ def capture_rng_states(loader_gen):
 def restore_rng_states(rng_states, loader_gen):
     random.setstate(rng_states['python_random'])
     np.random.set_state(rng_states['numpy_random'])
-    torch.random.set_rng_state(rng_states['torch_cpu'])
-    loader_gen.set_state(rng_states['loader_gen'])
+    torch.random.set_rng_state(rng_states['torch_cpu'].cpu())
+    loader_gen.set_state(rng_states['loader_gen'].cpu())
     if 'torch_cuda' in rng_states and torch.cuda.is_available():
-        torch.cuda.set_rng_state_all(rng_states['torch_cuda'])
+        torch.cuda.set_rng_state_all([s.cpu() for s in rng_states['torch_cuda']])
