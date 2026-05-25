@@ -29,9 +29,8 @@ from training.utils import (
 from training.model_adapters import create_adapter
 
 
-def _save_resume_checkpoint(path, *, model, ema_model, aux_head, ema_aux,
-                            optimizer, scheduler, epoch, global_step,
-                            rng_states, wandb_run_id):
+def _save_weights_checkpoint(path, *, model, ema_model, aux_head, ema_aux,
+                             epoch, global_step, rng_states, wandb_run_id):
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
     tmp_path = path + '.tmp'
     torch.save({
@@ -39,15 +38,25 @@ def _save_resume_checkpoint(path, *, model, ema_model, aux_head, ema_aux,
         'ema_model': ema_model.state_dict(),
         'aux_head': aux_head.state_dict(),
         'ema_aux': ema_aux.state_dict(),
-        'optimizer': optimizer.state_dict(),
-        'scheduler': scheduler.state_dict(),
         'epoch': epoch,
         'global_step': global_step,
         'rng_states': rng_states,
         'wandb_run_id': wandb_run_id,
     }, tmp_path)
     os.replace(tmp_path, path)
-    print(f"[CHECKPOINT] Resume saved: {path}  (epoch={epoch+1}, step={global_step})")
+    print(f"[CHECKPOINT] Weights saved: {path}  (epoch={epoch+1}, step={global_step})")
+
+
+def _save_optimizer_state(path, *, optimizer, scheduler, epoch):
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    tmp_path = path + '.tmp'
+    torch.save({
+        'optimizer': optimizer.state_dict(),
+        'scheduler': scheduler.state_dict(),
+        'epoch': epoch,
+    }, tmp_path)
+    os.replace(tmp_path, path)
+    print(f"[CHECKPOINT] Optimizer saved: {path}  (epoch={epoch+1})")
 
 
 WELL_COORDS = [
@@ -143,10 +152,11 @@ def run_training(cfg, args, resume_path=None):
     WRITER = cfg['logging']['writer']
 
     running_dir = cfg['checkpoints']['running_dir']
-    running_fmt = cfg['checkpoints']['running_fmt']
     final_path = cfg['checkpoints']['final_path']
     resume_ckpt_path = cfg['checkpoints'].get('resume_path',
         os.path.join(running_dir, 'resume_checkpoint.pt'))
+    optim_ckpt_path = resume_ckpt_path.replace('.pt', '_optim.pt')
+    save_every = cfg['checkpoints'].get('save_every', log_every * 5)
     epochs_per_run = cfg['training'].get('epochs_per_run', num_epochs)
 
     # --- Data loading ---
@@ -257,6 +267,7 @@ def run_training(cfg, args, resume_path=None):
 
     # --- Resume detection ---
     _resume_ckpt = None
+    _optim_ckpt = None
     start_epoch = 0
     global_step = 0
     wandb_run_id = None
@@ -268,6 +279,20 @@ def run_training(cfg, args, resume_path=None):
         global_step = _resume_ckpt['global_step']
         wandb_run_id = _resume_ckpt.get('wandb_run_id')
         print(f"[RESUME] Will resume from epoch {start_epoch}, global_step {global_step}")
+
+        if 'optimizer' in _resume_ckpt:
+            _optim_ckpt = _resume_ckpt
+            print("[RESUME] Legacy checkpoint with embedded optimizer state.")
+        elif os.path.isfile(optim_ckpt_path):
+            _optim_ckpt = torch.load(optim_ckpt_path, map_location=device, weights_only=False)
+            if _optim_ckpt['epoch'] != _resume_ckpt['epoch']:
+                print(f"[RESUME] Optimizer stale (epoch {_optim_ckpt['epoch']+1} vs "
+                      f"weights epoch {start_epoch}), restarting optimizer.")
+                _optim_ckpt = None
+            else:
+                print("[RESUME] Loaded matching optimizer state.")
+        else:
+            print("[RESUME] No optimizer checkpoint, restarting optimizer.")
     elif resume_path is not None:
         print(f"[RESUME] No checkpoint at {resume_path}, starting fresh.")
 
@@ -304,9 +329,12 @@ def run_training(cfg, args, resume_path=None):
         ema_model.load_state_dict(_resume_ckpt['ema_model'])
         aux_head_model.load_state_dict(_resume_ckpt['aux_head'])
         ema_aux.load_state_dict(_resume_ckpt['ema_aux'])
-        optimizer.load_state_dict(_resume_ckpt['optimizer'])
-        scheduler.load_state_dict(_resume_ckpt['scheduler'])
         restore_rng_states(_resume_ckpt['rng_states'], loader_gen)
+        if _optim_ckpt is not None:
+            optimizer.load_state_dict(_optim_ckpt['optimizer'])
+            scheduler.load_state_dict(_optim_ckpt['scheduler'])
+            if _optim_ckpt is not _resume_ckpt:
+                del _optim_ckpt
         del _resume_ckpt
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -483,32 +511,22 @@ def run_training(cfg, args, resume_path=None):
 
             global_step += 1
 
-        if (epoch + 1) % (log_every * 2) == 0:
-            os.makedirs(running_dir, exist_ok=True)
-            ckpt_path = os.path.join(running_dir, running_fmt.format(epoch=epoch + 1))
-            torch.save({
-                'model': model.state_dict(),
-                'ema_model': ema_model.state_dict(),
-                'aux_head': aux_head_model.state_dict(),
-                'ema_aux': ema_aux.state_dict(),
-            }, ckpt_path)
-            if WRITER and (epoch + 1) >= artifact_start_epoch and (epoch + 1) % artifact_interval == 0:
-                art = wandb.Artifact(
-                    f"{model_type}-{variant}-epoch{epoch + 1}", type="model")
-                art.add_file(ckpt_path)
-                wandb.log_artifact(art)
-            print(f"Epoch {epoch + 1}, k_upper={k_upper}, "
-                  f"LossMSE: {loss_mse.item():.5f}, LossH1: {loss_h1.item():.5f}")
-
-            _save_resume_checkpoint(
+        if (epoch + 1) % save_every == 0:
+            _save_weights_checkpoint(
                 resume_ckpt_path,
                 model=model, ema_model=ema_model,
                 aux_head=aux_head_model, ema_aux=ema_aux,
-                optimizer=optimizer, scheduler=scheduler,
                 epoch=epoch, global_step=global_step,
                 rng_states=capture_rng_states(loader_gen),
                 wandb_run_id=wandb_run_id,
             )
+            if WRITER and (epoch + 1) >= artifact_start_epoch and (epoch + 1) % artifact_interval == 0:
+                art = wandb.Artifact(
+                    f"{model_type}-{variant}-epoch{epoch + 1}", type="model")
+                art.add_file(resume_ckpt_path)
+                wandb.log_artifact(art)
+            print(f"Epoch {epoch + 1}, k_upper={k_upper}, "
+                  f"LossMSE: {loss_mse.item():.5f}, LossH1: {loss_h1.item():.5f}")
 
     # --- End of segment ---
     training_complete = (end_epoch >= num_epochs)
@@ -521,9 +539,10 @@ def run_training(cfg, args, resume_path=None):
             'aux_head': aux_head_model.state_dict(),
             'ema_aux': ema_aux.state_dict(),
         }, final_path)
-        if os.path.isfile(resume_ckpt_path):
-            os.remove(resume_ckpt_path)
-            print(f"[CHECKPOINT] Training complete. Removed resume checkpoint.")
+        for f in [resume_ckpt_path, optim_ckpt_path]:
+            if os.path.isfile(f):
+                os.remove(f)
+                print(f"[CHECKPOINT] Training complete. Removed {os.path.basename(f)}")
         if WRITER:
             art = wandb.Artifact(f"{model_type}-{variant}-final", type="model")
             art.add_file(final_path)
@@ -531,15 +550,17 @@ def run_training(cfg, args, resume_path=None):
             wandb.finish()
         print(f"[DONE] All {num_epochs} epochs complete.")
     else:
-        _save_resume_checkpoint(
+        _save_weights_checkpoint(
             resume_ckpt_path,
             model=model, ema_model=ema_model,
             aux_head=aux_head_model, ema_aux=ema_aux,
-            optimizer=optimizer, scheduler=scheduler,
             epoch=end_epoch - 1, global_step=global_step,
             rng_states=capture_rng_states(loader_gen),
             wandb_run_id=wandb_run_id,
         )
+        _save_optimizer_state(optim_ckpt_path,
+            optimizer=optimizer, scheduler=scheduler,
+            epoch=end_epoch - 1)
         if WRITER:
             wandb.finish(exit_code=0)
         print(f"[SEGMENT DONE] Epochs {start_epoch+1}-{end_epoch} of {num_epochs} complete.")

@@ -62,6 +62,5 @@ logging:
 
 checkpoints:
   running_dir: "checkpoints/running/"
-  running_fmt: "hetero_loglo_{epoch}.pth"
   final_path: "checkpoints/hetero_loglo_final.pth"
   resume_path: "checkpoints/running/loglo_hetero_resume.pt"

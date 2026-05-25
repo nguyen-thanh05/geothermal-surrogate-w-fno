@@ -62,6 +62,5 @@ logging:
 
 checkpoints:
   running_dir: "checkpoints/running/"
-  running_fmt: "new_ds_{epoch}.pth"
   final_path: "checkpoints/new_ds_final.pth"
   resume_path: "checkpoints/running/loglo_homo_resume.pt"

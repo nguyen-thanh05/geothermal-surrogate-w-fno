@@ -59,6 +59,5 @@ logging:
 
 checkpoints:
   running_dir: "checkpoints/running/"
-  running_fmt: "unet_d4_homo_{epoch}.pth"
   final_path: "checkpoints/unet_d4_homo_final.pth"
   resume_path: "checkpoints/running/unet_d4_homo_resume.pt"

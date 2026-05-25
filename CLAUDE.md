@@ -76,7 +76,7 @@ pip install -e .                  # register local packages so imports resolve
 - **Adaptive noise** injected to input state 80% of the time.
 - **EMA** tracked for both backbone and aux head.
 - **LR schedule**: linear warmup → cosine decay to `min_lr`.
-- Checkpoints saved every `log_every * 2` epochs; W&B artifacts uploaded.
+- **Checkpoints**: weights-only resume checkpoint saved every `save_every` epochs (default `log_every * 5 = 100`). Optimizer state saved as separate companion file only at segment boundaries (end of each `epochs_per_run`). On resume between jobs, optimizer loads if epoch matches weights; otherwise restarts fresh.
 
 ### Data (`training/dataset.py`)
 - `ARDataset.__getitem__` samples random timestep t per trajectory, returns (history, y_t, y_tp1, action, aux).
@@ -120,7 +120,8 @@ Each model key has both `_homo.yml` and `_hetero.yml` configs (12 total).
 
 - Heterogeneous mode adds 4 static channels; homogeneous has `in_channels=6` (4 state + rate + mask), heterogeneous has `in_channels=10` (4 state + 4 static + rate + mask). LOGLO counts differently: `in_dim=4`/`8` for state, `action_channels=2`/`6`.
 - Well coordinates at layers 0-1 in action are zeroed out before model input (non-perforated layers).
-- Checkpoint dict keys: `model`, `ema_model`, `aux_head`, `ema_aux`.
+- Checkpoint dict keys: `model`, `ema_model`, `aux_head`, `ema_aux`. Optimizer state in separate `_optim.pt` companion file (saved at segment boundaries only).
 - Checkpoint paths auto-include seed subdirectory: `checkpoints/running/seed42/`, `checkpoints/seed42/`.
 - W&B projects: `LOGLOFNO_HOMO_exp` (homogeneous) / `LOGLOFNO_HETERO_exp` (heterogeneous).
-- W&B artifact uploads gated by `logging.artifact_start_epoch` (default 2000) and `logging.artifact_interval` (default 500). Local checkpoints still save every `log_every * 2` epochs. Final model always uploaded.
+- W&B artifact uploads gated by `logging.artifact_start_epoch` (default 2000) and `logging.artifact_interval` (default 500). Local checkpoints save every `save_every` epochs (default `log_every * 5`). Final model always uploaded.
+- Stale checkpoint cleanup: `python scripts/cleanup_checkpoints.py` (dry-run) or `--delete` to remove resume/optim files for completed experiments.

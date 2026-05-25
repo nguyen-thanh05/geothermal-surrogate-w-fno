@@ -60,6 +60,5 @@ logging:
 
 checkpoints:
   running_dir: "checkpoints/running/"
-  running_fmt: "fno_m4x16x8_h128_homo_{epoch}.pth"
   final_path: "checkpoints/fno_m4x16x8_h128_homo_final.pth"
   resume_path: "checkpoints/running/fno_m4x16x8_h128_homo_resume.pt"
