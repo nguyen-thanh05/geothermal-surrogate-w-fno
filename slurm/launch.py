@@ -35,6 +35,7 @@ def submit_chain(config_path, seed, dry_run=False):
         cmd = [
             'sbatch',
             f'--job-name={job_name}',
+            '--exclude=fc10713',
             f'--export=ALL,CONFIG={config_path},SEED={seed}',
         ]
         if job_ids:
