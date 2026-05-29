@@ -25,7 +25,7 @@ training:
   weight_decay: 1.0e-4
   ema_decay: 0.9995
   log_every: 20
-  grad_clip_norm: 8.0
+  grad_clip_norm: 1.0
   noise_alpha: [0.0025, 0.0025, 0.025, 0.025]
   use_pushforward: true
   pushforward_k_max: 10
