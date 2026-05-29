@@ -181,6 +181,15 @@ def run_training(cfg, args, resume_path=None):
     save_every = cfg['checkpoints'].get('save_every', log_every * 5)
     epochs_per_run = cfg['training'].get('epochs_per_run', num_epochs)
 
+    # --- Idempotency guard ---
+    # The resume checkpoint is the completion signal, but it's deleted once the
+    # final model is saved. Without this, a requeued/re-launched job for an
+    # already-finished experiment would find no resume ckpt, start from scratch,
+    # and overwrite final_path. final_path is seed-specific, so this is per-seed.
+    if os.path.isfile(final_path):
+        print(f"[DONE] Final model already exists at {final_path}, skipping.")
+        return
+
     # --- Data loading ---
     mode = None if args.hpc else 'r'
     data_path = cfg['data']['path']
@@ -464,12 +473,16 @@ def run_training(cfg, args, resume_path=None):
                 if pf_mask.any():
                     static_pf = static[pf_mask] if static is not None else None
 
+                    # eval() during rollout so dropout (Transolver) doesn't
+                    # inject extra noise — we want a clean drift-error estimate.
                     with torch.no_grad():
+                        model.eval()
                         y_pf = y_history[pf_mask, start_idx]
                         for i in range(k):
                             pf_input_i = adapter.build_model_input(
                                 y_pf, action_history[pf_mask, start_idx + i], static_pf)
                             y_pf = adapter.forward(model, pf_input_i)
+                        model.train()
 
                     y_pf = y_pf.detach()
                     target_pf = y_tp1[pf_mask]
@@ -505,7 +518,9 @@ def run_training(cfg, args, resume_path=None):
 
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip_norm)
+            torch.nn.utils.clip_grad_norm_(
+                list(model.parameters()) + list(aux_head_model.parameters()),
+                max_norm=grad_clip_norm)
             optimizer.step()
             scheduler.step()
             update_ema(ema_model, model, ema_aux, aux_head_model, ema_decay)
