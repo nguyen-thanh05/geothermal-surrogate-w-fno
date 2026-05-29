@@ -54,8 +54,8 @@ logging:
   writer: true
   wandb_project: "LOGLOFNO_HETERO_exp"
   wandb_entity: null
-  artifact_start_epoch: 2000
-  artifact_interval: 500
+  watch_model: false
+  log_scalar_every: 10
 
 checkpoints:
   running_dir: "checkpoints/running/"

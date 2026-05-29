@@ -19,6 +19,14 @@ fi
 export results=$SLURM_TMPDIR/results
 export data=$SLURM_TMPDIR/data
 
+# Keep wandb run dir + artifact cache + staging on node-local scratch:
+# off the /project quota, auto-purged at job end, synced live to the cloud.
+export WANDB_MODE=online
+export WANDB_DIR=$SLURM_TMPDIR/wandb
+export WANDB_CACHE_DIR=$SLURM_TMPDIR/wandb/cache
+export WANDB_DATA_DIR=$SLURM_TMPDIR/wandb/data
+mkdir -p "$WANDB_DIR" "$WANDB_CACHE_DIR" "$WANDB_DATA_DIR"
+
 module load python/3.11
 module load cuda
 source /home/thanh2/projects/def-juliana2/thanh2/.torch/bin/activate

@@ -13,6 +13,7 @@ __pycache__/
 weights/
 checkpoints/
 out/
+evaluation_results/
 *.pth
 
 # IDE

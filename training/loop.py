@@ -13,6 +13,7 @@ from losses import H1Loss, LpLoss
 from models.unet3d import UNet3D
 from models.fno_wrapper import FNOWrapper
 from models.loglo_fno import LOGLO_FNO
+from models.transolver3d import TransolverWrapper
 from models.aux_head import AuxHead
 
 from training.physics import (
@@ -98,6 +99,22 @@ def create_model(model_cfg, model_type):
             n_blocks=model_cfg['n_blocks'],
             action_channels=model_cfg['action_channels'],
         )
+    elif model_type == 'transolver':
+        return TransolverWrapper(
+            in_channels=model_cfg['in_channels'],
+            out_channels=model_cfg['out_channels'],
+            hidden_dim=model_cfg['hidden_dim'],
+            n_layers=model_cfg['n_layers'],
+            n_head=model_cfg['n_head'],
+            slice_num=model_cfg.get('slice_num', 32),
+            mlp_ratio=model_cfg.get('mlp_ratio', 2),
+            H=model_cfg.get('H', 16),
+            W=model_cfg.get('W', 64),
+            D=model_cfg.get('D', 32),
+            spatial_embed=model_cfg.get('spatial_embed', True),
+            num_bands=model_cfg.get('num_bands', 32),
+            max_freq=model_cfg.get('max_freq', 64.0),
+        )
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
@@ -136,8 +153,7 @@ def run_training(cfg, args, resume_path=None):
     warmup_steps = cfg['training'].get('warmup_steps', 0)
     min_lr = cfg['training'].get('min_lr', 1e-5)
     use_pushforward = cfg['training'].get('use_pushforward', True)
-    artifact_start_epoch = cfg['logging'].get('artifact_start_epoch', 2000)
-    artifact_interval = cfg['logging'].get('artifact_interval', 500)
+    log_scalar_every = cfg['logging'].get('log_scalar_every', 10)
 
     use_mse = cfg['loss'].get('use_mse', True)
     mse_weight = cfg['loss'].get('mse_weight', 1.0)
@@ -325,11 +341,14 @@ def run_training(cfg, args, resume_path=None):
         wandb.init(**init_kwargs)
         if wandb_run_id is None:
             wandb.config.update({"seed": seed, "hpc": args.hpc})
-            wandb.watch(model, log="all", log_freq=100)
-            wandb.watch(aux_head_model, log="all", log_freq=100)
+            if cfg['logging'].get('watch_model', False):
+                watch_freq = cfg['logging'].get('watch_freq', 1000)
+                wandb.watch(model, log="all", log_freq=watch_freq)
+                wandb.watch(aux_head_model, log="all", log_freq=watch_freq)
         wandb_run_id = wandb.run.id
 
     # --- Apply resume state ---
+    optimizer_restored = False
     if _resume_ckpt is not None:
         _resume_ckpt['model'].pop('_metadata', None)
         _resume_ckpt['ema_model'].pop('_metadata', None)
@@ -341,9 +360,15 @@ def run_training(cfg, args, resume_path=None):
         if _optim_ckpt is not None:
             optimizer.load_state_dict(_optim_ckpt['optimizer'])
             scheduler.load_state_dict(_optim_ckpt['scheduler'])
+            optimizer_restored = True
             if _optim_ckpt is not _resume_ckpt:
                 del _optim_ckpt
         del _resume_ckpt
+        if not optimizer_restored and global_step > 0:
+            for _ in range(global_step):
+                scheduler.step()
+            print(f"[RESUME] Scheduler advanced to step {global_step}, "
+                  f"LR={scheduler.get_last_lr()[0]:.2e}")
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
@@ -486,21 +511,22 @@ def run_training(cfg, args, resume_path=None):
             update_ema(ema_model, model, ema_aux, aux_head_model, ema_decay)
 
             if WRITER:
-                wandb.log({
-                    'Loss/MSE': loss_mse.item(),
-                    'Loss/H1': loss_h1.item(),
-                    'Loss/Aux': loss_aux.item(),
-                    'Loss/L2_Rel': loss_l2_rel.item(),
-                    'Loss/MBE': loss_mbe.item(),
-                    'Loss/Spectral_Low': spectral_bands[0].item(),
-                    'Loss/Spectral_Mid': spectral_bands[1].item(),
-                    'Loss/Spectral_High': spectral_bands[2].item(),
-                    'Loss/MeanField': loss_meanfield.item(),
-                    'Loss/Total': loss.item(),
-                    'Loss/Pushforward': loss_pf.item(),
-                    'Training/k': k,
-                    'Training/lr': optimizer.param_groups[0]['lr'],
-                }, step=global_step)
+                if global_step % log_scalar_every == 0:
+                    wandb.log({
+                        'Loss/MSE': loss_mse.item(),
+                        'Loss/H1': loss_h1.item(),
+                        'Loss/Aux': loss_aux.item(),
+                        'Loss/L2_Rel': loss_l2_rel.item(),
+                        'Loss/MBE': loss_mbe.item(),
+                        'Loss/Spectral_Low': spectral_bands[0].item(),
+                        'Loss/Spectral_Mid': spectral_bands[1].item(),
+                        'Loss/Spectral_High': spectral_bands[2].item(),
+                        'Loss/MeanField': loss_meanfield.item(),
+                        'Loss/Total': loss.item(),
+                        'Loss/Pushforward': loss_pf.item(),
+                        'Training/k': k,
+                        'Training/lr': optimizer.param_groups[0]['lr'],
+                    }, step=global_step)
 
                 if epoch % log_every == 0 and batch_idx == 0:
                     _run_validation(
@@ -528,11 +554,9 @@ def run_training(cfg, args, resume_path=None):
                 rng_states=capture_rng_states(loader_gen),
                 wandb_run_id=wandb_run_id,
             )
-            if WRITER and (epoch + 1) >= artifact_start_epoch and (epoch + 1) % artifact_interval == 0:
-                art = wandb.Artifact(
-                    f"{model_type}-{variant}-epoch{epoch + 1}", type="model")
-                art.add_file(resume_ckpt_path)
-                wandb.log_artifact(art)
+            _save_optimizer_state(optim_ckpt_path,
+                optimizer=optimizer, scheduler=scheduler,
+                epoch=epoch)
             print(f"Epoch {epoch + 1}, k_upper={k_upper}, "
                   f"LossMSE: {loss_mse.item():.5f}, LossH1: {loss_h1.item():.5f}")
 
@@ -552,9 +576,12 @@ def run_training(cfg, args, resume_path=None):
                 os.remove(f)
                 print(f"[CHECKPOINT] Training complete. Removed {os.path.basename(f)}")
         if WRITER:
-            art = wandb.Artifact(f"{model_type}-{variant}-final", type="model")
-            art.add_file(final_path)
-            wandb.log_artifact(art)
+            try:
+                art = wandb.Artifact(f"{model_type}-{variant}-final", type="model")
+                art.add_file(final_path)
+                wandb.log_artifact(art)
+            except Exception as e:
+                print(f"[WARNING] Final artifact upload failed: {e}")
             wandb.finish()
         print(f"[DONE] All {num_epochs} epochs complete.")
     else:

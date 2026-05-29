@@ -14,6 +14,7 @@ MODELS = {
     'fno_m4x16x8_h128':  {'display': 'FNO m4x16x8 h128', 'config_prefix': 'fno_m4x16x8_h128'},
     'unet_d3':           {'display': 'UNet3D d3',         'config_prefix': 'unet_d3'},
     'unet_d4':           {'display': 'UNet3D d4',         'config_prefix': 'unet_d4'},
+    'transolver':        {'display': 'Transolver',        'config_prefix': 'transolver'},
 }
 
 VARIANTS = ['homo', 'hetero']

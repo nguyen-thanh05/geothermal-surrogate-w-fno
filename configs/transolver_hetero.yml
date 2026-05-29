@@ -1,14 +1,22 @@
 data:
-  path: '../dataset_v3/'
-  heterogeneous: false
+  path: '../dataset_v3_hetero/'
+  heterogeneous: true
 
 model:
-  type: fno
-  n_modes: [8, 32, 16]
-  n_layers: 4
-  hidden_channels: 64
-  in_channels: 6    # 4 state + 1 rate + 1 mask
+  type: transolver
+  in_channels: 10   # 4 state + 4 static + 1 rate + 1 mask
   out_channels: 4
+  hidden_dim: 256
+  n_layers: 8
+  n_head: 8
+  slice_num: 32
+  mlp_ratio: 2
+  H: 16
+  W: 64
+  D: 32
+  spatial_embed: true
+  num_bands: 32
+  max_freq: 64.0
   aux_channels: 16
 
 training:
@@ -53,12 +61,12 @@ loss:
 
 logging:
   writer: true
-  wandb_project: "LOGLOFNO_HOMO_exp"
+  wandb_project: "LOGLOFNO_HETERO_exp"
   wandb_entity: null
   watch_model: false
   log_scalar_every: 10
 
 checkpoints:
   running_dir: "checkpoints/running/"
-  final_path: "checkpoints/fno_m8x32x16_h64_homo_final.pth"
-  resume_path: "checkpoints/running/fno_m8x32x16_h64_homo_resume.pt"
+  final_path: "checkpoints/transolver_hetero_final.pth"
+  resume_path: "checkpoints/running/transolver_hetero_resume.pt"

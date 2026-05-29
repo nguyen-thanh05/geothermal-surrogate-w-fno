@@ -123,5 +123,5 @@ Each model key has both `_homo.yml` and `_hetero.yml` configs (12 total).
 - Checkpoint dict keys: `model`, `ema_model`, `aux_head`, `ema_aux`. Optimizer state in separate `_optim.pt` companion file (saved at segment boundaries only).
 - Checkpoint paths auto-include seed subdirectory: `checkpoints/running/seed42/`, `checkpoints/seed42/`.
 - W&B projects: `LOGLOFNO_HOMO_exp` (homogeneous) / `LOGLOFNO_HETERO_exp` (heterogeneous).
-- W&B artifact uploads gated by `logging.artifact_start_epoch` (default 2000) and `logging.artifact_interval` (default 500). Local checkpoints save every `save_every` epochs (default `log_every * 5`). Final model always uploaded.
+- W&B local storage is kept off the `/project` quota: `slurm/train.sh` points `WANDB_DIR`/`WANDB_CACHE_DIR`/`WANDB_DATA_DIR` at `$SLURM_TMPDIR` (node-local, auto-purged at job end, synced live in online mode). Only the **final** model is uploaded as an artifact. Per-step scalar logging is throttled by `logging.log_scalar_every` (default 10); gradient/parameter histograms (`wandb.watch`) are off unless `logging.watch_model: true`. Local checkpoints save every `save_every` epochs (default `log_every * 5`).
 - Stale checkpoint cleanup: `python scripts/cleanup_checkpoints.py` (dry-run) or `--delete` to remove resume/optim files for completed experiments.
