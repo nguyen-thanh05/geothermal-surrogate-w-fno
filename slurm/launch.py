@@ -27,12 +27,12 @@ def get_config_path(model_key, variant):
     return f'configs/{prefix}_{variant}.yml'
 
 
-def submit_chain(config_path, seed, dry_run=False):
+def submit_chain(config_path, seed, jobs_per_chain, dry_run=False):
     config_name = os.path.splitext(os.path.basename(config_path))[0]
     job_name = f'{config_name}_s{seed}'
 
     job_ids = []
-    for i in range(JOBS_PER_CHAIN):
+    for i in range(jobs_per_chain):
         cmd = [
             'sbatch',
             f'--job-name={job_name}',
@@ -74,7 +74,7 @@ def pick_numbered(prompt, options, allow_all=True):
         sys.exit(1)
 
 
-def interactive_mode(dry_run=False):
+def interactive_mode(dry_run=False, jobs_per_chain=JOBS_PER_CHAIN):
     print('\n=== HPC Job Launcher ===\n')
 
     model_keys = list(MODELS.keys())
@@ -97,6 +97,14 @@ def interactive_mode(dry_run=False):
             print('Seeds must be integers.')
             sys.exit(1)
 
+    raw = input(f'\nSegments per experiment [{jobs_per_chain}]: ').strip()
+    if raw:
+        try:
+            jobs_per_chain = int(raw)
+        except ValueError:
+            print('Segments must be an integer.')
+            sys.exit(1)
+
     experiments = []
     for mk in selected_models:
         for var in selected_variants:
@@ -107,14 +115,14 @@ def interactive_mode(dry_run=False):
             for seed in seeds_per_model[mk]:
                 experiments.append((mk, var, seed, config))
 
-    print_summary(experiments)
+    print_summary(experiments, jobs_per_chain)
 
     confirm = input('Submit? [y/N]: ').strip().lower()
     if confirm != 'y':
         print('Aborted.')
         sys.exit(0)
 
-    submit_experiments(experiments, dry_run)
+    submit_experiments(experiments, jobs_per_chain, dry_run)
 
 
 def cli_mode(args, dry_run=False):
@@ -146,26 +154,26 @@ def cli_mode(args, dry_run=False):
             for seed in seeds_per_model[mk]:
                 experiments.append((mk, var, seed, config))
 
-    print_summary(experiments)
-    submit_experiments(experiments, dry_run)
+    print_summary(experiments, args.jobs_per_chain)
+    submit_experiments(experiments, args.jobs_per_chain, dry_run)
 
 
-def print_summary(experiments):
-    total_jobs = len(experiments) * JOBS_PER_CHAIN
+def print_summary(experiments, jobs_per_chain):
+    total_jobs = len(experiments) * jobs_per_chain
     print(f'\n{"Model":<12} {"Variant":<10} {"Seed":<12} {"Config"}')
     print('-' * 60)
     for mk, var, seed, config in experiments:
         print(f'{MODELS[mk]["display"]:<12} {var:<10} {seed:<12} {config}')
-    print(f'\nTotal: {len(experiments)} experiments x {JOBS_PER_CHAIN} segments = {total_jobs} SLURM jobs\n')
+    print(f'\nTotal: {len(experiments)} experiments x {jobs_per_chain} segments = {total_jobs} SLURM jobs\n')
 
 
-def submit_experiments(experiments, dry_run=False):
+def submit_experiments(experiments, jobs_per_chain, dry_run=False):
     print('Submitting...\n')
     all_job_ids = []
 
     for mk, var, seed, config in experiments:
         display = MODELS[mk]['display']
-        job_ids = submit_chain(config, seed, dry_run=dry_run)
+        job_ids = submit_chain(config, seed, jobs_per_chain, dry_run=dry_run)
         all_job_ids.extend(job_ids)
 
         print(f'{display} / {var} / seed{seed}:')
@@ -188,6 +196,9 @@ def main():
     parser.add_argument('--seeds', type=str, default=None,
                         help='JSON dict mapping model key to comma-separated seeds, '
                              'e.g. \'{"fno":"42,123","unet3d":"42"}\'')
+    parser.add_argument('--jobs-per-chain', type=int, default=JOBS_PER_CHAIN,
+                        help=f'Chained segments per experiment (default {JOBS_PER_CHAIN}). '
+                             'Raise for slow models that need >3 segments, e.g. transolver.')
     parser.add_argument('--dry-run', action='store_true',
                         help='Print sbatch commands without submitting')
     args = parser.parse_args()
@@ -201,7 +212,7 @@ def main():
             sys.exit(1)
         cli_mode(args, dry_run)
     else:
-        interactive_mode(dry_run)
+        interactive_mode(dry_run, args.jobs_per_chain)
 
 
 if __name__ == '__main__':

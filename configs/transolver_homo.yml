@@ -40,7 +40,7 @@ training:
   pushforward_k_step_interval: 5000
   warmup_steps: 4500
   min_lr: 3.0e-4
-  epochs_per_run: 1000
+  epochs_per_run: 250   # ~7.5h/segment, fits 11:55 wall limit so afterok chain completes (transolver ~1.8 min/epoch)
 
 loss:
   use_mse: true
