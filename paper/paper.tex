@@ -1,12 +1,8 @@
 %==============================================================================
 %  Application of Fourier Neural Operator as Autoregressive Neural Surrogate
 %  for Geothermal Simulation
-%
-%  Skeleton populated by Claude. Section bodies are drafts/placeholders --
-%  revise and rewrite freely. Swap \documentclass for a venue template later.
 %==============================================================================
 \documentclass[11pt]{article}
-
 %------------------------------- Packages -------------------------------------
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -22,6 +18,8 @@
 \usepackage{booktabs}             % \toprule \midrule \bottomrule
 \usepackage{multirow}
 \usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc,shapes.misc,shapes.geometric}
 \usepackage{algorithm}
 \usepackage{algpseudocode}        % training-loop pseudocode
 \usepackage[numbers,sort&compress]{natbib}
@@ -39,6 +37,33 @@
 % Editorial markers -- delete before submission.
 \newcommand{\todo}[1]{\textcolor{red}{[\textbf{TODO:} #1]}}
 \newcommand{\note}[1]{\textcolor{blue}{[\emph{#1}]}}
+
+%---------------------- TikZ palette + styles (architecture fig) --------------
+\definecolor{cGlobal}{HTML}{2C5F8A}   % global spectral branch
+\definecolor{cLocal}{HTML}{2E7D5B}    % local patch branch
+\definecolor{cHF}{HTML}{C25A1A}       % high-frequency branch
+\definecolor{cCond}{HTML}{6A4C93}     % action / AdaLN conditioning
+\definecolor{cAux}{HTML}{0F7B7B}      % auxiliary head
+\definecolor{cLift}{HTML}{37474F}     % lifting / projection
+\tikzset{
+  >={Latex[length=2mm]},
+  font=\footnotesize,
+  io/.style={draw=none, font=\small\bfseries, text=black!80, align=center},
+  blk/.style={rounded corners=2pt, draw=#1!70, fill=#1!10, text=black!85,
+              line width=0.7pt, align=center, inner sep=4pt, minimum height=8mm},
+  blk/.default=cLift,
+  stack/.style={rounded corners=2pt, draw=cGlobal!70, fill=cGlobal!8,
+                line width=0.7pt, align=center, inner sep=4pt},
+  op/.style={circle, draw=black!70, fill=black!4, line width=0.7pt,
+             inner sep=0pt, minimum size=5.5mm, font=\small},
+  arr/.style={->, line width=0.7pt, draw=black!65},
+  arrc/.style={->, line width=0.7pt, draw=cCond!75, densely dashed},
+  zlabel/.style={font=\scriptsize\itshape, text=black!60},
+  panel/.style={rounded corners=3pt, draw=black!45, densely dashed,
+                line width=0.8pt, fill=black!2, inner sep=7pt},
+  bgbox/.style={rounded corners=3pt, draw=black!20, fill=black!2,
+                line width=0.6pt, inner sep=8pt},
+}
 
 %------------------------------- Metadata -------------------------------------
 \title{Application of Fourier Neural Operator as an Autoregressive
@@ -268,14 +293,12 @@ test our surrogate model's ability to learn and generalize with limited data.
   After running the 400 simulations for each dataset, we extract the pressure and
   temperature fields at weekly intervals from the STARS output (.sr3) files, giving
   156 time steps per trajectory. Each field has four channels: matrix temperature,
-  fracture temperature, matrix pressure, and fracture pressure. We split the 400 trajectories into 300 for 
-  training and 100 for testing.
+  fracture temperature, matrix pressure, and fracture pressure. For each dataset, 
+  we split the 400 trajectories into 300 for training and 100 for testing.
 
-  The surrogate model's task is to predict the field at the next time step from the
-  current field and the current well-control action. From each simulation we have a
-  trajectory of states sampled at regular weekly intervals, and this temporal
-  discretization motivates us to view the problem as an Euler discretization of the
-  reservoir dynamics, where an operator $\model$ models the per-step rate of change,
+  Since we extract pressure and temperature fields at weekly intervals, we can view our learning
+  problem as an Euler discretization of the reservoir dynamics, where an operator 
+  $\model$ models the per-step rate of change,
   \begin{equation}
     \frac{\state_{t+1} - \state_t}{\Delta t} = \model(\state_t, \action_t).
     \label{eq:euler}
@@ -291,8 +314,16 @@ test our surrogate model's ability to learn and generalize with limited data.
   as a $16 \times 64 \times 32$ tensor that holds each well's rate at its perforated
   cells (layers 2--13, see Table~1) and zero elsewhere. We concatenate it with a
   second tensor of the same shape: a binary mask that is 1 at active perforated cells
-  and 0 at shut-in cells. Note that this is equivalent to having a clean residual connection from $\state_t$ to $\state_{t+1}$, 
-  which we implement our LOGLO-FNO adaptation and all of the baselines.
+  and 0 at shut-in cells. This formulation treats the reservoir dynamics as Markov: the next state
+  $\state_{t+1}$ is fully determined by the current state $\state_t$ and the current
+  action $\action_t$, with no dependence on earlier history. This assumption is well
+  grounded in how the data are generated. The governing mass and energy balance
+  equations are first order in time, so the instantaneous rate of change of the state
+  depends only on the present state and the present well controls. The numerical
+  simulator inherits this structure: it advances each time step by solving an implicit
+  system assembled solely from the state at time $t$ and the controls applied over the
+  step. The surrogate therefore only needs to learn this single-step update, and
+  conditioning on additional past states would be redundant.
 
   Beyond predicting the next state $\state_{t+1}$, the same setup can be extended to
   learn any derived quantity of interest. Formally, given the current and next states
@@ -317,11 +348,138 @@ conditioning, zero-init projection for identity-at-init, patch size $(8,8,8)$.
 Describe the auxiliary head predicting per-well BHP and energy production rates.
 Include an architecture diagram.}
 
-\begin{figure}[t]
+\begin{figure}[tb]
   \centering
-  % \includegraphics[width=\textwidth]{figures/architecture.pdf}
-  \todo{architecture diagram}
-  \caption{Model architecture.}
+  \resizebox{\textwidth}{!}{%
+  \begin{tikzpicture}
+    %=========================== MAIN PIPELINE ===========================
+    % --- inputs ---
+    \node[io] (ut) at (0,0) {$\state_t$\\[1pt]{\scriptsize $16{\times}64{\times}32$, 4 ch}};
+    \node[io] (at) at (0,2.7) {$\action_t$\\[1pt]{\scriptsize rate $+$ mask}};
+
+    % --- action-conditioning lane ---
+    \node[blk=cCond, minimum width=2.3cm] (ae) at (2.95,2.7)
+        {Action encoder\\{\scriptsize Conv$_{1^3}\!\to\!$GELU$\to\!$Conv$_{3^3}$}};
+    \node[blk=cCond, minimum width=2.3cm] (cond) at (6.4,2.7)
+        {Conditioner\\{\scriptsize GELU$\to$Conv$_{1^3}$ (zero-init)}};
+
+    % --- three independent input lifts ---
+    \node[blk=cGlobal, minimum width=2.5cm] (gl) at (3.3,1.2)
+        {Global lift\\{\scriptsize grid emb.\,$+$\,Conv$_{1^3}$}};
+    \node[blk=cLocal, minimum width=2.5cm] (lo) at (3.3,0.0)
+        {Local lift\\{\scriptsize patchify\,$8^3$\,$+$\,Conv$_{1^3}$}};
+    \node[blk=cHF, minimum width=2.5cm] (hf) at (3.3,-1.2)
+        {High-freq lift\\{\scriptsize $\state_t\!-\!\mathrm{up}(\mathrm{avgpool}_4)$, Conv$_{1^3}$}};
+
+    % --- LoGlo block stack ---
+    \node[stack, minimum width=2.3cm, minimum height=2.7cm] (stack) at (6.7,0)
+        {\textbf{LoGlo}\\\textbf{block}\\$\times\,5$};
+
+    % --- projection, residual add, output ---
+    \node[blk=cLift, minimum width=2.0cm] (proj) at (9.4,0)
+        {Projection\\{\scriptsize MLP, zero-init}};
+    \node[op] (plus) at (10.9,0) {$+$};
+    \node[io] (utp1) at (12.0,0) {$\state_{t+1}$};
+
+    % --- auxiliary head ---
+    \node[blk=cAux, minimum width=2.9cm] (aux) at (9.4,-2.6)
+        {Auxiliary head $\mathcal{H}_\psi$\\{\scriptsize sample 9 well columns}\\{\scriptsize $\to$ per-well MLP $\to$ linear}};
+    \node[io] (qt) at (12.7,-2.6) {$\mathbf{q}_t$\\[1pt]{\scriptsize 9 BHP $+$ 7 energy}};
+
+    % --- action arrows ---
+    \draw[arr] (at) -- (ae);
+    \draw[arr] (ae) -- (cond);
+    \draw[arrc] (cond) -- (stack.north)
+        node[midway,right=1pt,zlabel,text=cCond]{$(\gamma_i,\beta_i)$};
+
+    % --- lift arrows ---
+    \draw[arr] (ut) -- (gl);
+    \draw[arr] (ut) -- (lo);
+    \draw[arr] (ut) -- (hf);
+    \draw[arr] (gl.east) -- ([yshift=7pt]stack.west)
+        node[pos=0.62,above,zlabel]{$z$};
+    \draw[arr] (lo.east) -- (stack.west)
+        node[pos=0.55,above=1pt,zlabel]{$\hat z$};
+    \draw[arr] (hf.east) -- ([yshift=-7pt]stack.west)
+        node[pos=0.62,below,zlabel]{$z'$};
+
+    % --- backbone tail ---
+    \draw[arr] (stack) -- (proj) node[midway,above=0pt,zlabel]{$\model$};
+    \draw[arr] (proj) -- (plus);
+    \draw[arr] (plus) -- (utp1);
+
+    % --- residual skip (top arc) ---
+    \draw[arr, rounded corners=6pt] (ut.north) -- (0,2.05) -- (10.9,2.05) -- (plus.north)
+        node[pos=0.5,above,zlabel]{residual\, $\state_t$};
+
+    % --- auxiliary-head inputs ---
+    \draw[arr, rounded corners=6pt] (ut.south) -- (0,-2.6) -- (aux.west)
+        node[pos=0.62,below,zlabel]{$\state_t$};
+    \draw[arr, rounded corners=6pt] (utp1.south) -- (12.0,-1.5) -- (9.4,-1.5) -- (aux.north)
+        node[pos=0.78,above,zlabel]{$\state_{t+1}$};
+    \draw[arr] (aux) -- (qt);
+
+    %========================= ZOOM: ONE BLOCK =========================
+    \node[zlabel, font=\small\itshape] (zin)  at (0.55,-4.7) {$z$};
+    \node[zlabel, font=\small\itshape] (zhin) at (0.55,-5.9) {$\hat z$};
+    \node[zlabel, font=\small\itshape] (zpin) at (0.55,-7.1) {$z'$};
+
+    \node[blk=cGlobal, text width=4.0cm] (gbr) at (3.7,-4.7)
+        {\textbf{Global branch}\\{\scriptsize $\mathrm{MLP_o}\big(\sigma(\mathrm{SpecConv}_{(4,16,8)}z+\mathrm{MLP_i}z)\big)$}\\{\scriptsize $+\;\mathrm{MLP_{skip}}\,z$}};
+    \node[blk=cLocal, text width=4.0cm] (lbr) at (3.7,-5.9)
+        {\textbf{Local branch} (patches)\\{\scriptsize same structure, $\mathrm{SpecConv}_{(8,8,8)}$}\\{\scriptsize on $8^3$ patches $\to$ unpatchify}};
+    \node[blk=cHF, text width=4.0cm] (hbr) at (3.7,-7.1)
+        {\textbf{High-freq branch}\\{\scriptsize pointwise MLP}};
+
+    \node[op] (sum) at (7.2,-5.9) {$\Sigma$};
+    \node[blk=cLift, minimum width=1.7cm] (ln) at (8.9,-5.9)
+        {LayerNorm\\{\scriptsize GroupNorm$_1$}};
+    \node[blk=cCond, minimum width=2.0cm] (adaln) at (10.9,-5.9)
+        {AdaLN-Zero\\{\scriptsize $s(1{+}\gamma)+\beta$}};
+    \node[op] (gelu2) at (12.5,-5.9) {$\sigma$};
+    \node[zlabel, font=\small\itshape, align=center] (zout) at (12.5,-7.1) {to next\\block ($z$)};
+    \node[zlabel, text=cCond] (gbnode) at (10.9,-4.7) {$(\gamma_i,\beta_i)$};
+
+    \draw[arr] (zin)  -- (gbr);
+    \draw[arr] (zhin) -- (lbr);
+    \draw[arr] (zpin) -- (hbr);
+    \draw[arr] (gbr) -- (sum);
+    \draw[arr] (lbr) -- (sum);
+    \draw[arr] (hbr) -- (sum);
+    \draw[arr] (sum) -- (ln);
+    \draw[arr] (ln) -- (adaln);
+    \draw[arr] (adaln) -- (gelu2);
+    \draw[arrc] (gbnode) -- (adaln);
+    \draw[arr] (gelu2) -- (zout);
+
+    % panel container + title
+    \begin{scope}[on background layer]
+      \node[panel, fit=(zin)(zhin)(zpin)(gbr)(lbr)(hbr)(sum)(ln)(adaln)(gelu2)(zout)(gbnode)] (panel) {};
+      \draw[densely dashed, draw=black!35, line width=0.6pt]
+          (stack.south west) -- (panel.north west);
+      \draw[densely dashed, draw=black!35, line width=0.6pt]
+          (stack.south east) -- (panel.north east);
+    \end{scope}
+    \node[anchor=south west, font=\small\bfseries, text=black!70]
+        at ([xshift=2pt,yshift=1.5pt]panel.north west) {One LoGlo block (detailed view)};
+  \end{tikzpicture}%
+  }
+  \caption{Architecture of the adapted LoGlo-FNO surrogate. The current state
+    $\state_t$ is processed by three independent lifts---a position-aware
+    \emph{global} lift, a patch-based \emph{local} lift (patch size $8^3$), and a
+    \emph{high-frequency} lift---and the well-control action $\action_t$ is encoded
+    and turned into per-block AdaLN-Zero modulation $(\gamma_i,\beta_i)$ by a
+    zero-initialized conditioner. The hidden state passes through five LoGlo blocks;
+    only the global hidden state $z$ is carried forward, while $\hat z$ and $z'$ are
+    refreshed from it (re-patchify / high-pass) between blocks. A zero-initialized
+    projection produces the increment, added residually to give
+    $\state_{t+1}=\state_t+\model(\state_t,\action_t)$ (identity at initialization).
+    \emph{Bottom:} one LoGlo block sums a global spectral branch
+    ($\mathrm{SpecConv}$ modes $(4,16,8)$), a local patch-spectral branch (all
+    $8^3$ modes), and a high-frequency pointwise-MLP branch, then applies
+    LayerNorm, AdaLN-Zero modulation, and GELU. A separate auxiliary head
+    $\mathcal{H}_\psi$ reads well columns from $\state_t$ and $\state_{t+1}$ to
+    predict $\mathbf{q}_t$ (9 bottomhole pressures and 7 producer energy rates).}
   \label{fig:arch}
 \end{figure}
 
@@ -416,3 +574,5 @@ geometry), and implications for well-control optimization.}
 \bibliography{references}
 
 \end{document}
+
+
