@@ -72,6 +72,36 @@ class MLP_Block(nn.Module):
         return x
 
 
+class ModulationEncoder(nn.Module):
+    """Encode actions → per-block AdaLN-Zero modulation params (γ, β).
+
+    Structure: Linear → GELU → Conv3d → GELU → Linear
+    (pointwise Conv3d k=1 acts as a channel-wise Linear). Final projection
+    zero-init ⇒ γ=β=0 at start, so each block reduces to LN(sum); combined
+    with the zero-init projection the whole model is identity at init.
+    """
+
+    def __init__(self, action_channels, hidden_dim, n_blocks):
+        super(ModulationEncoder, self).__init__()
+        self.hidden_dim = hidden_dim
+        self.n_blocks = n_blocks
+        self.encoder = nn.Sequential(
+            nn.Conv3d(action_channels, hidden_dim, kernel_size=1),            # Linear
+            nn.GELU(),
+            nn.Conv3d(hidden_dim, hidden_dim, kernel_size=3, padding=1),      # Conv3d
+            nn.GELU(),
+            nn.Conv3d(hidden_dim, hidden_dim * 2 * n_blocks, kernel_size=1),  # Linear
+        )
+        nn.init.zeros_(self.encoder[-1].weight)
+        nn.init.zeros_(self.encoder[-1].bias)
+
+    def forward(self, action):
+        """(B, action_channels, D, H, W) → (B, n_blocks, 2, hidden_dim, D, H, W)."""
+        B, _, D, H, W = action.shape
+        cond = self.encoder(action)
+        return cond.view(B, self.n_blocks, 2, self.hidden_dim, D, H, W)
+
+
 class LOGLO_Block(nn.Module):
     """One Local-Global block (AdaLN-Zero conditioning at the end).
 
@@ -83,7 +113,7 @@ class LOGLO_Block(nn.Module):
 
     Combination + modulation:
         s   = Y_global + Y_local + Y_highfreq
-        out = σ( LN(s) ⊙ (1 + γ(a)) + β(a) )
+        out = LN(s) ⊙ (1 + γ(a)) + β(a)   # non-affine LN, no post-activation
     """
 
     def __init__(self, hidden_dim, patch_size=(8, 8, 8)):
@@ -110,8 +140,9 @@ class LOGLO_Block(nn.Module):
         # --- High-freq branch (pointwise MLP only) ---
         self.highfreq_mlp = MLP_Block(hidden_dim, hidden_dim, hidden_dim)
 
-        # --- End-of-block normalization + activation (modulation injected externally) ---
-        self.norm = nn.GroupNorm(num_groups=1, num_channels=hidden_dim)
+        # --- End-of-block normalization (non-affine: affine handled by AdaLN γ/β) ---
+        self.norm = nn.GroupNorm(num_groups=1, num_channels=hidden_dim, affine=False)
+        # activation used inside the global/local branches (not after modulation)
         self.activation = nn.GELU()
 
     def forward(self, z, z_hat, z_prime, gamma, beta):
@@ -143,11 +174,10 @@ class LOGLO_Block(nn.Module):
         # High-freq: pointwise MLP
         y_highfreq = self.highfreq_mlp(z_prime)
 
-        # Sum → LayerNorm (GroupNorm-1) → AdaLN modulation → activation
+        # Sum → LayerNorm (GroupNorm-1, non-affine) → AdaLN modulation (no activation)
         s = y_global + y_local_full + y_highfreq
         s = self.norm(s)
-        s = s * (1 + gamma) + beta
-        return self.activation(s)
+        return s * (1 + gamma) + beta
 
 
 # ---------------------------------------------------------------------------
@@ -217,34 +247,21 @@ class LOGLO_FNO(nn.Module):
         nn.init.zeros_(self.projection.fc2.weight)
         nn.init.zeros_(self.projection.fc2.bias)
 
-        # ---- Action conditioning (same as FNO_Model) ----
-        self.action_encoder = nn.Sequential(
-            nn.Conv3d(in_channels=action_channels, out_channels=self.hidden_dim, kernel_size=1),
-            nn.GELU(),
-            nn.Conv3d(in_channels=self.hidden_dim, out_channels=self.hidden_dim, kernel_size=3, padding=1),
+        # ---- Action → AdaLN-Zero modulation (single consolidated encoder) ----
+        # γ, β per block (factor 2). Final Conv zero-init so γ=β=0 at start ⇒
+        # each block reduces to LN(sum). Combined with the zero-init projection,
+        # the model is identity at init.
+        self.modulation_encoder = ModulationEncoder(
+            action_channels=action_channels,
+            hidden_dim=self.hidden_dim,
+            n_blocks=self.n_blocks,
         )
-        # AdaLN-Zero: γ, β per block (factor 2). Final Conv zero-init so γ=β=0
-        # at start ⇒ each block reduces to σ(LN(sum)). Combined with zero-init
-        # projection, the model is identity at init.
-        self.conditioner = nn.Sequential(
-            nn.GELU(),
-            nn.Conv3d(in_channels=self.hidden_dim,
-                      out_channels=self.hidden_dim * 2 * self.n_blocks, kernel_size=1),
-        )
-        nn.init.zeros_(self.conditioner[-1].weight)
-        nn.init.zeros_(self.conditioner[-1].bias)
 
 
     def forward(self, x, action):
         x_input = x
-        B = x.shape[0]
 
-        action_encoded = self.action_encoder(action)
-        conditioning = self.conditioner(action_encoded)
-        conditioning = conditioning.view(
-            B, self.n_blocks, 2, self.hidden_dim,
-            x.shape[2], x.shape[3], x.shape[4]
-        )
+        conditioning = self.modulation_encoder(action)
 
         z = self.lifting(self.grid_embedding(x))
 
