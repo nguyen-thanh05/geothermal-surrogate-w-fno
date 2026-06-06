@@ -1,3 +1,5 @@
 [shell_environment_policy]
 inherit = "all"
-set = { CONDA_DEFAULT_ENV = "torch", CONDA_PREFIX = "C:\\Users\\ntt\\anaconda3\\envs\\torch", PATH = "C:\\Users\\ntt\\anaconda3\\envs\\torch;C:\\Users\\ntt\\anaconda3\\envs\\torch\\Library\\mingw-w64\\bin;C:\\Users\\ntt\\anaconda3\\envs\\torch\\Library\\usr\\bin;C:\\Users\\ntt\\anaconda3\\envs\\torch\\Library\\bin;C:\\Users\\ntt\\anaconda3\\envs\\torch\\Scripts;C:\\Users\\ntt\\anaconda3\\condabin;C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0" }
+# Keep this platform-neutral. `.codex/environments/environment.toml`
+# activates the `torch` conda environment and lets conda resolve the
+# machine-specific CONDA_PREFIX/PATH on Windows, macOS, or Linux.
