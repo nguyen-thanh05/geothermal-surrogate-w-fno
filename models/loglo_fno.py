@@ -145,13 +145,15 @@ class LOGLO_Block(nn.Module):
         # activation used inside the global/local branches (not after modulation)
         self.activation = nn.GELU()
 
-    def forward(self, z, z_hat, z_prime, gamma, beta):
+    def forward(self, z, z_hat, z_prime, gamma=None, beta=None):
         """
         Args:
             z:       (B, C, D, H, W)        — global hidden state
             z_hat:   (B*nP, C, pD, pH, pW)  — patchified hidden state
             z_prime: (B, C, D, H, W)        — high-freq hidden state
-            gamma, beta: (B, C, D, H, W)    — AdaLN modulation from action
+            gamma, beta: (B, C, D, H, W)    — AdaLN modulation from action.
+                         If None (e.g. VanillaLOGLO_FNO), modulation is skipped
+                         and the block returns the non-affine LN(sum).
         Returns:
             out: (B, C, D, H, W)
         """
@@ -177,7 +179,9 @@ class LOGLO_Block(nn.Module):
         # Sum → LayerNorm (GroupNorm-1, non-affine) → AdaLN modulation (no activation)
         s = y_global + y_local_full + y_highfreq
         s = self.norm(s)
-        return s * (1 + gamma) + beta
+        if gamma is not None:
+            s = s * (1 + gamma) + beta
+        return s
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +278,88 @@ class LOGLO_FNO(nn.Module):
         for i, block in enumerate(self.loglo_blocks):
             z = block(z, z_hat, z_prime,
                       conditioning[:, i, 0], conditioning[:, i, 1])
+
+            if i < self.n_blocks - 1:
+                z_hat, _ = patchify_3d(z, self.patch_size)
+                z_prime = highfreq_3d(z, kernel_size=self.highfreq_kernel)
+
+        spatial_out = self.projection(z) + x_input[:, :self.out_dim]
+        return spatial_out
+
+
+class VanillaLOGLO_FNO(nn.Module):
+    """Vanilla LOGLO_FNO baseline — action concatenated into the input channels
+    instead of AdaLN-Zero modulation.
+
+    Identical to LOGLO_FNO (global spectral + local patch spectral + high-freq
+    MLP branches, zero-init projection ⇒ identity at init) EXCEPT the action
+    modulation encoder is removed. The action is concatenated into ``x`` upstream
+    (via SingleTensorAdapter), so ``in_dim`` already includes the rate/mask
+    (+ static) channels and the blocks run with no γ/β modulation (each reduces
+    to the non-affine LN(sum)).
+    """
+
+    def __init__(self, in_dim=6,
+                 out_dim=4,
+                 lifting_dim=128,
+                 projection_dim=128,
+                 hidden_dim=64,
+                 n_blocks=4,
+                 patch_size=(8, 8, 8),
+                 highfreq_kernel=4,
+                 **kwargs):
+        super(VanillaLOGLO_FNO, self).__init__()
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+        self.lifting_dim = lifting_dim
+        self.projection_dim = projection_dim
+        self.hidden_dim = hidden_dim
+        self.n_blocks = n_blocks
+        self.patch_size = patch_size
+        self.highfreq_kernel = highfreq_kernel
+
+        # ---- Global lifting (grid coords + Conv3d) ----
+        spatial_grid_boundaries = [[0.0, 1.0]] * 3
+        self.grid_embedding = GridEmbeddingND(in_channels=self.in_dim,
+                                              dim=3,
+                                              grid_boundaries=spatial_grid_boundaries)
+        self.lifting = nn.Conv3d(in_channels=self.in_dim + 3,
+                                 out_channels=self.hidden_dim, kernel_size=1)
+
+        # ---- Local lifting (patches, independent representation) ----
+        self.local_lifting = nn.Conv3d(in_channels=self.in_dim,
+                                       out_channels=self.hidden_dim, kernel_size=1)
+
+        # ---- High-freq lifting (independent representation) ----
+        self.highfreq_lifting = nn.Conv3d(in_channels=self.in_dim,
+                                          out_channels=self.hidden_dim, kernel_size=1)
+
+        # ---- LOGLO blocks ----
+        self.loglo_blocks = nn.ModuleList(
+            [LOGLO_Block(hidden_dim=self.hidden_dim, patch_size=self.patch_size)
+             for _ in range(self.n_blocks)]
+        )
+
+        # ---- Projection (zero-init → identity at init: y(t+1) = y(t) + 0) ----
+        self.projection = MLP_Block(in_dim=self.hidden_dim, out_dim=self.out_dim,
+                                    hidden_dim=self.projection_dim)
+        nn.init.zeros_(self.projection.fc2.weight)
+        nn.init.zeros_(self.projection.fc2.bias)
+
+    def forward(self, x):
+        # x: (B, in_dim, D, H, W) — state + action already concatenated upstream.
+        x_input = x
+
+        z = self.lifting(self.grid_embedding(x))
+
+        x_patches, _ = patchify_3d(x, self.patch_size)
+        z_hat = self.local_lifting(x_patches)
+
+        x_h = highfreq_3d(x, kernel_size=self.highfreq_kernel)
+        z_prime = self.highfreq_lifting(x_h)
+
+        for i, block in enumerate(self.loglo_blocks):
+            z = block(z, z_hat, z_prime)  # no AdaLN modulation
 
             if i < self.n_blocks - 1:
                 z_hat, _ = patchify_3d(z, self.patch_size)

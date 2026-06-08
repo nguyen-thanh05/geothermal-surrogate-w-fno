@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from losses import H1Loss, LpLoss
 from models.unet3d import UNet3D
 from models.fno_wrapper import FNOWrapper
-from models.loglo_fno import LOGLO_FNO
+from models.loglo_fno import LOGLO_FNO, VanillaLOGLO_FNO
 from models.transolver3d import TransolverWrapper
 from models.aux_head import AuxHead
 
@@ -98,6 +98,15 @@ def create_model(model_cfg, model_type):
             hidden_dim=model_cfg['hidden_dim'],
             n_blocks=model_cfg['n_blocks'],
             action_channels=model_cfg['action_channels'],
+        )
+    elif model_type == 'vanilla_loglo':
+        return VanillaLOGLO_FNO(
+            in_dim=model_cfg['in_dim'],
+            out_dim=model_cfg['out_dim'],
+            lifting_dim=model_cfg['lifting_dim'],
+            projection_dim=model_cfg['projection_dim'],
+            hidden_dim=model_cfg['hidden_dim'],
+            n_blocks=model_cfg['n_blocks'],
         )
     elif model_type == 'transolver':
         return TransolverWrapper(
@@ -335,7 +344,8 @@ def run_training(cfg, args, resume_path=None):
 
     # --- W&B ---
     if WRITER:
-        run_name = f"{model_type}-{variant}-seed{seed}"
+        run_tag = cfg['logging'].get('run_tag', '')
+        run_name = f"{model_type}{run_tag}-{variant}-seed{seed}"
         init_kwargs = dict(
             project=cfg['logging'].get('wandb_project', f'LOGLOFNO_{variant.upper()}_exp'),
             entity=cfg['logging'].get('wandb_entity', None),
@@ -592,7 +602,7 @@ def run_training(cfg, args, resume_path=None):
                 print(f"[CHECKPOINT] Training complete. Removed {os.path.basename(f)}")
         if WRITER:
             try:
-                art = wandb.Artifact(f"{model_type}-{variant}-final", type="model")
+                art = wandb.Artifact(f"{model_type}{run_tag}-{variant}-final", type="model")
                 art.add_file(final_path)
                 wandb.log_artifact(art)
             except Exception as e:

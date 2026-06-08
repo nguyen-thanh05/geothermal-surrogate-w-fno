@@ -15,6 +15,8 @@ MODELS = {
     'unet_d3':           {'display': 'UNet3D d3',         'config_prefix': 'unet_d3'},
     'unet_d4':           {'display': 'UNet3D d4',         'config_prefix': 'unet_d4'},
     'transolver':        {'display': 'Transolver',        'config_prefix': 'transolver'},
+    'transolver_h128_s64': {'display': 'Transolver h128 s64', 'config_prefix': 'transolver_h128_s64'},
+    'vanilla_loglo':     {'display': 'Vanilla LOGLO_FNO',  'config_prefix': 'vanilla_loglo'},
 }
 
 VARIANTS = ['homo', 'hetero']

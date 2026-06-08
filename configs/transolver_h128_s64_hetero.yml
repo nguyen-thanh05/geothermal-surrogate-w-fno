@@ -1,0 +1,73 @@
+data:
+  path: '../dataset_v3_hetero/'
+  heterogeneous: true
+
+model:
+  type: transolver
+  in_channels: 10   # 4 state + 4 static + 1 rate + 1 mask
+  out_channels: 4
+  hidden_dim: 128
+  n_layers: 8
+  n_head: 8
+  slice_num: 64
+  mlp_ratio: 2
+  H: 16
+  W: 64
+  D: 32
+  spatial_embed: false
+  num_bands: 32
+  max_freq: 64.0
+  aux_channels: 16
+
+training:
+  local:
+    batch_size: 1
+    lr: 3.0e-4
+    num_epochs: 1000
+    test_batch_size: 1
+  hpc:
+    batch_size: 4
+    lr: 8.0e-4
+    num_epochs: 3000
+    test_batch_size: 4
+  weight_decay: 1.0e-4
+  ema_decay: 0.9995
+  log_every: 20
+  grad_clip_norm: 1.0
+  noise_alpha: [0.0025, 0.0025, 0.025, 0.025]
+  use_pushforward: true
+  pushforward_k_max: 10
+  pushforward_k_step_interval: 5000
+  warmup_steps: 4500
+  min_lr: 3.0e-4
+  epochs_per_run: 250   # ~7.5h/segment, fits 11:55 wall limit so afterok chain completes (transolver ~1.8 min/epoch)
+
+loss:
+  use_mse: true
+  mse_weight: 3.0
+  use_h1: true
+  h1_weight: 0.5
+  use_aux: true
+  aux_weight: 0.1
+  use_mbe: true
+  mbe_weight: 1.0
+  use_spectral: true
+  spectral_weight: 3.0
+  spectral_iLow: 4
+  spectral_iHigh: 12
+  use_meanfield: true
+  meanfield_weight: 2.0
+  channel_weights: [1.0, 1.0, 2.0, 2.0]
+
+logging:
+  writer: true
+  wandb_project: "LOGLOFNO_HETERO_exp"
+  wandb_entity: null
+  watch_model: false
+  log_scalar_every: 10
+  run_tag: "_h128_s64"   # distinguishes this 64-slice variant from the 32-slice transolver in wandb
+
+checkpoints:
+  running_dir: "checkpoints/running/"
+  final_path: "checkpoints/transolver_h128_s64_hetero_final.pth"
+  resume_path: "checkpoints/running/transolver_h128_s64_hetero_resume.pt"
