@@ -89,7 +89,7 @@ def create_model(model_cfg, model_type):
             n_layers=model_cfg['n_layers'],
             hidden_channels=model_cfg['hidden_channels'],
         )
-    elif model_type == 'loglo':
+    elif model_type in ('loglo', 'loglo_new'):
         return LOGLO_FNO(
             in_dim=model_cfg['in_dim'],
             out_dim=model_cfg['out_dim'],

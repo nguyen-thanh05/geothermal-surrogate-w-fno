@@ -9,6 +9,7 @@ import sys
 
 MODELS = {
     'loglo':             {'display': 'LOGLO_FNO',         'config_prefix': 'loglo'},
+    'loglo_new':         {'display': 'LOGLO_FNO New',     'config_prefix': 'loglo_new'},
     'fno_m8x32x16_h64':  {'display': 'FNO m8x32x16 h64', 'config_prefix': 'fno_m8x32x16_h64'},
     'fno_m4x16x8_h64':   {'display': 'FNO m4x16x8 h64',  'config_prefix': 'fno_m4x16x8_h64'},
     'fno_m4x16x8_h128':  {'display': 'FNO m4x16x8 h128', 'config_prefix': 'fno_m4x16x8_h128'},
