@@ -18,6 +18,8 @@ MODELS = {
     'transolver':        {'display': 'Transolver',        'config_prefix': 'transolver'},
     'transolver_h128_s64': {'display': 'Transolver h128 s64', 'config_prefix': 'transolver_h128_s64'},
     'vanilla_loglo':     {'display': 'Vanilla LOGLO_FNO',  'config_prefix': 'vanilla_loglo'},
+    'loglo_v2':          {'display': 'LOGLO_FNO v2',       'config_prefix': 'loglo_v2'},
+    'vanilla_loglo_v2':  {'display': 'Vanilla LOGLO_FNO v2', 'config_prefix': 'vanilla_loglo_v2'},
 }
 
 VARIANTS = ['homo', 'hetero']

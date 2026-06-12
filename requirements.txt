@@ -6,3 +6,4 @@ wandb
 neuralop @ git+https://github.com/neuraloperator/neuraloperator.git
 torchinfo
 pillow
+einops

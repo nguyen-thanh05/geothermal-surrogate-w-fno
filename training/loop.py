@@ -13,6 +13,7 @@ from losses import H1Loss, LpLoss
 from models.unet3d import UNet3D
 from models.fno_wrapper import FNOWrapper
 from models.loglo_fno import LOGLO_FNO, VanillaLOGLO_FNO
+from models.loglo_fno_v2 import LOGLO_FNO as LOGLO_FNO_V2, VanillaLOGLO_FNO as VanillaLOGLO_FNO_V2
 from models.transolver3d import TransolverWrapper
 from models.aux_head import AuxHead
 
@@ -98,6 +99,25 @@ def create_model(model_cfg, model_type):
             hidden_dim=model_cfg['hidden_dim'],
             n_blocks=model_cfg['n_blocks'],
             action_channels=model_cfg['action_channels'],
+        )
+    elif model_type == 'loglo_v2':
+        return LOGLO_FNO_V2(
+            in_dim=model_cfg['in_dim'],
+            out_dim=model_cfg['out_dim'],
+            lifting_dim=model_cfg['lifting_dim'],
+            projection_dim=model_cfg['projection_dim'],
+            hidden_dim=model_cfg['hidden_dim'],
+            n_blocks=model_cfg['n_blocks'],
+            action_channels=model_cfg['action_channels'],
+        )
+    elif model_type == 'vanilla_loglo_v2':
+        return VanillaLOGLO_FNO_V2(
+            in_dim=model_cfg['in_dim'],
+            out_dim=model_cfg['out_dim'],
+            lifting_dim=model_cfg['lifting_dim'],
+            projection_dim=model_cfg['projection_dim'],
+            hidden_dim=model_cfg['hidden_dim'],
+            n_blocks=model_cfg['n_blocks'],
         )
     elif model_type == 'vanilla_loglo':
         return VanillaLOGLO_FNO(

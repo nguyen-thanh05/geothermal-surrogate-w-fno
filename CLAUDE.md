@@ -99,10 +99,10 @@ pip install -e .                  # register local packages so imports resolve
 YAML configs in `configs/` follow naming: `{model}_{hyperparams}_{variant}.yml`. Hyperparams encode key architecture knobs visible at a glance:
 - FNO: `fno_m{modes}x_h{hidden}_{variant}.yml` — e.g. `fno_m8x32x16_h64_homo.yml`, `fno_m4x16x8_h128_hetero.yml`
 - UNet: `unet_d{depth}_{variant}.yml` — e.g. `unet_d3_homo.yml`, `unet_d4_hetero.yml`
-- LOGLO: `loglo_{variant}.yml`; vanilla baseline (action concatenated into input, no AdaLN modulation): `vanilla_loglo_{variant}.yml`
+- LOGLO: `loglo_{variant}.yml`; vanilla baseline (action concatenated into input, no AdaLN modulation): `vanilla_loglo_{variant}.yml`; v2 (`models/loglo_fno_v2.py`, dual-stream modulation encoder with γ/β/α AdaLN-Zero, soft-gating skips): `loglo_v2_{variant}.yml`, `vanilla_loglo_v2_{variant}.yml` (no modulation, no norm)
 - Transolver: `transolver_{variant}.yml` (32 slices, hidden_dim=256); larger-slice variant `transolver_h128_s64_{variant}.yml` (slice_num=64, hidden_dim=128, spatial_embed=false)
 
-Each config has sections: `data`, `model`, `training` (with `local`/`hpc` sub-configs), `loss`, `logging`, `checkpoints`. The `model.type` field (`fno`, `loglo`, `vanilla_loglo`, `unet3d`, `transolver`) selects both the model class and adapter.
+Each config has sections: `data`, `model`, `training` (with `local`/`hpc` sub-configs), `loss`, `logging`, `checkpoints`. The `model.type` field (`fno`, `loglo`, `loglo_new`, `loglo_v2`, `vanilla_loglo`, `vanilla_loglo_v2`, `unet3d`, `transolver`) selects both the model class and adapter.
 
 ### Current experiment matrix
 
@@ -115,10 +115,12 @@ Each config has sections: `data`, `model`, `training` (with `local`/`hpc` sub-co
 | `unet_d4` | — | — | 64 | 4 | — |
 | `loglo` | — | 5 blocks | 64 | — | AdaLN-Zero action conditioning |
 | `vanilla_loglo` | — | 5 blocks | 64 | — | LOGLO w/o modulation; action concatenated into input |
+| `loglo_v2` | — | 5 blocks | 64 | — | v2: dual-stream encoder, γ/β/α AdaLN-Zero, soft-gating skips |
+| `vanilla_loglo_v2` | — | 5 blocks | 64 | — | v2 w/o modulation or norm; action concatenated into input |
 | `transolver` | — | 8 | 256 | — | slice_num=32, spatial_embed=true |
 | `transolver_h128_s64` | — | 8 | 128 | — | slice_num=64, spatial_embed=false |
 
-Each model key has both `_homo.yml` and `_hetero.yml` configs (18 total).
+Each model key has both `_homo.yml` and `_hetero.yml` configs (24 total).
 
 `vanilla_loglo` and `transolver_h128_s64` are baselines for side-by-side comparison against `loglo` and `transolver`. They get distinct wandb run names — `transolver_h128_s64` via `logging.run_tag: "_h128_s64"` (keeping the same per-variant project so curves overlay); `vanilla_loglo` via its own `model.type`.
 

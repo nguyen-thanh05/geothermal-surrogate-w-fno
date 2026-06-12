@@ -63,9 +63,9 @@ class AugmentedDualTensorAdapter:
 
 
 def create_adapter(model_type, heterogeneous):
-    if model_type in ('unet3d', 'fno', 'transolver', 'vanilla_loglo'):
+    if model_type in ('unet3d', 'fno', 'transolver', 'vanilla_loglo', 'vanilla_loglo_v2'):
         return SingleTensorAdapter(heterogeneous=heterogeneous)
-    elif model_type == 'loglo':
+    elif model_type in ('loglo', 'loglo_v2'):
         return DualTensorAdapter(heterogeneous=heterogeneous)
     elif model_type == 'loglo_new':
         return AugmentedDualTensorAdapter(heterogeneous=heterogeneous)

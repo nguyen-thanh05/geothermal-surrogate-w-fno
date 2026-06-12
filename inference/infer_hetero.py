@@ -93,10 +93,13 @@ def get_static(datasets, idx, device):
 
 
 def load_model(cfg, checkpoint_path, device, use_ema=False):
-    """Load LOGLO_FNO v2 model and AuxHead from config and checkpoint (hetero variant)."""
-    from models.loglo_fno import LOGLO_FNO
+    """Load LOGLO_FNO model (v1 or v2, per model.type) and AuxHead from config and checkpoint (hetero variant)."""
     from models.aux_head import AuxHead
     m = cfg['model']
+    if m['type'] == 'loglo_v2':
+        from models.loglo_fno_v2 import LOGLO_FNO
+    else:
+        from models.loglo_fno import LOGLO_FNO
     model = LOGLO_FNO(
         in_dim=m['in_dim'], out_dim=m['out_dim'],
         lifting_dim=m['lifting_dim'], projection_dim=m['projection_dim'],
