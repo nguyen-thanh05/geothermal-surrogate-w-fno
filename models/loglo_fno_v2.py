@@ -51,7 +51,7 @@ class ModulationEncoder(nn.Module):
         self.hidden_dim = hidden_dim
         self.n_blocks = n_blocks
         self.pool_stream_encoder = MLP_Block(in_dim, hidden_dim, hidden_dim)
-        self.pool_stream_out = nn.Linear(hidden_dim, hidden_dim * 3 * n_blocks) # gamma, beta and alpha
+        self.pool_stream_out = nn.Linear(hidden_dim, hidden_dim * 2 * n_blocks) # gamma, beta and alpha
         
         self.local_perception = nn.Sequential(
             nn.Conv3d(in_dim, hidden_dim, kernel_size=1),
@@ -60,7 +60,7 @@ class ModulationEncoder(nn.Module):
             nn.GELU(),
             nn.Conv3d(hidden_dim, hidden_dim, kernel_size=3, padding=1),
             nn.GELU(),
-            nn.Conv3d(hidden_dim, hidden_dim * 3 * n_blocks, kernel_size=1)
+            nn.Conv3d(hidden_dim, hidden_dim * 2 * n_blocks, kernel_size=1)
         )
 
         # AdaLN-Zero: gamma = beta = alpha = 0 at init, so blocks start with
@@ -79,7 +79,7 @@ class ModulationEncoder(nn.Module):
 
         local_perception_stream = self.local_perception(x)
         cond = local_perception_stream + pool_stream.view(B, -1, 1, 1, 1)
-        return cond.view(B, self.n_blocks, 3, self.hidden_dim, D, H, W)
+        return cond.view(B, self.n_blocks, 2, self.hidden_dim, D, H, W)
     
 
 class LOGLO_Block(nn.Module):
@@ -94,9 +94,7 @@ class LOGLO_Block(nn.Module):
             n_modes=(4, 16, 8))
         self.global_mlp_inner = MLP_Block(hidden_dim, hidden_dim, hidden_dim)
         self.global_mlp_outer = MLP_Block(hidden_dim, hidden_dim, hidden_dim)
-        self.global_soft_gating_skip = nn.Parameter(
-            torch.ones(1, hidden_dim, 1, 1, 1)
-        )
+        self.global_mlp_skip = MLP_Block(hidden_dim, hidden_dim, hidden_dim)
 
         # --- Local branch (all modes retained for patch size) ---
         self.local_spectral = SpectralConv(
@@ -104,9 +102,7 @@ class LOGLO_Block(nn.Module):
             n_modes=patch_size)
         self.local_mlp_inner = MLP_Block(hidden_dim, hidden_dim, hidden_dim)
         self.local_mlp_outer = MLP_Block(hidden_dim, hidden_dim, hidden_dim)
-        self.local_soft_gating_skip = nn.Parameter(
-            torch.ones(1, hidden_dim, 1, 1, 1)
-        )
+        self.local_mlp_skip = MLP_Block(hidden_dim, hidden_dim, hidden_dim)
 
         # --- High-freq branch (pointwise MLP only) ---
         self.highfreq_mlp = MLP_Block(hidden_dim, hidden_dim, hidden_dim)
@@ -114,7 +110,7 @@ class LOGLO_Block(nn.Module):
         self.norm = nn.GroupNorm(num_groups=1, num_channels=hidden_dim, affine=False)
         self.activation = nn.GELU()
     
-    def forward(self, z, z_hat, z_prime, gamma=None, beta=None, alpha=None):
+    def forward(self, z, z_hat, z_prime, gamma=None, beta=None):
         B = z.shape[0]
         D, H, W = z.shape[2], z.shape[3], z.shape[4]
         pD, pH, pW = self.patch_size
@@ -123,29 +119,22 @@ class LOGLO_Block(nn.Module):
         if gamma is not None:
             z = self.norm(z)
             z_hat = self.norm(z_hat)
-            z_prime = self.norm(z_prime)
-            
             z = z * (1 + gamma) + beta
             z_hat = z_hat * (1 + gamma) + beta
-            z_prime = z_prime * (1 + gamma) + beta
-        
-        if alpha is None:
-            alpha = torch.ones_like(z)
             
-        y_global = alpha * self.global_mlp_outer(
+        y_global = self.global_mlp_outer(
             self.activation(self.global_spectral(z) + self.global_mlp_inner(z))
-        ) + self.global_soft_gating_skip * z
+        ) + self.global_mlp_skip(z)
         
         z_hat, _ = patchify_3d(z_hat, self.patch_size)
-        alpha_patch, _ = patchify_3d(alpha, self.patch_size)
-        y_local = alpha_patch * self.local_mlp_outer(
+        y_local = self.local_mlp_outer(
             self.activation(self.local_spectral(z_hat) + self.local_mlp_inner(z_hat))
-        ) + self.local_soft_gating_skip * z_hat
+        ) + self.local_mlp_skip(z_hat)
         y_local_full = unpatchify_3d(y_local, B, grid_size)
 
-        y_highfreq = self.highfreq_mlp(z_prime) * alpha
+        y_highfreq = self.highfreq_mlp(z_prime)
 
-        return y_global + y_local_full + y_highfreq
+        return self.activation(y_global + y_local_full + y_highfreq)
     
 
 class LOGLO_FNO(nn.Module):
@@ -215,7 +204,7 @@ class LOGLO_FNO(nn.Module):
 
         for i, block in enumerate(self.loglo_blocks):
             z = block(z, z_hat, z_prime,
-                      conditioning[:, i, 0], conditioning[:, i, 1], conditioning[:, i, 2])
+                      conditioning[:, i, 0], conditioning[:, i, 1])
 
             if i < self.n_blocks - 1:
                 z_hat = z  # block patchifies internally ⇒ v1's z_hat = patchify(z)
