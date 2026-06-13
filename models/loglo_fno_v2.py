@@ -164,13 +164,13 @@ class LOGLO_FNO(nn.Module):
         self.grid_embedding = GridEmbeddingND(in_channels=self.in_dim,
                                               dim=3,
                                               grid_boundaries=spatial_grid_boundaries)
-        self.global_lifting = MLP_Block(self.in_dim, self.hidden_dim, self.hidden_dim)
+        self.global_lifting = MLP_Block(self.in_dim, self.hidden_dim, self.lifting_dim)
 
         # ---- Local lifting (patches, independent representation) ----
-        self.local_lifting = MLP_Block(self.in_dim + 3, self.hidden_dim, self.hidden_dim)
+        self.local_lifting = MLP_Block(self.in_dim + 3, self.hidden_dim, self.lifting_dim)
 
         # ---- High-freq lifting (independent representation) ----
-        self.highfreq_lifting = MLP_Block(self.in_dim, self.hidden_dim, self.hidden_dim)
+        self.highfreq_lifting = MLP_Block(self.in_dim, self.hidden_dim, self.lifting_dim)
         
         # ---- LOGLO blocks ----
         self.loglo_blocks = nn.ModuleList(
