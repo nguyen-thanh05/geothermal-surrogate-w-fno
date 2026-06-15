@@ -50,40 +50,38 @@ class ModulationEncoder(nn.Module):
         super(ModulationEncoder, self).__init__()
         self.hidden_dim = hidden_dim
         self.n_blocks = n_blocks
-        self.pool_stream_encoder = MLP_Block(in_dim, hidden_dim, hidden_dim)
-        self.pool_stream_out = nn.Linear(hidden_dim, hidden_dim * 2 * n_blocks) # gamma, beta and alpha
-        
-        self.local_perception = nn.Sequential(
-            nn.Conv3d(in_dim, hidden_dim, kernel_size=1),
+        self.encoder = nn.Sequential(
+            MLP_Block(in_dim, hidden_dim, hidden_dim),
             nn.GELU(),
             nn.Conv3d(hidden_dim, hidden_dim, kernel_size=3, padding=1),
             nn.GELU(),
             nn.Conv3d(hidden_dim, hidden_dim, kernel_size=3, padding=1),
             nn.GELU(),
-            nn.Conv3d(hidden_dim, hidden_dim * 2 * n_blocks, kernel_size=1)
+            MLP_Block(hidden_dim, hidden_dim * 2, hidden_dim),
+            nn.GELU(),
+        )
+        self.output_head = nn.Sequential(
+            nn.Linear(hidden_dim * 2, hidden_dim * 2),
+            nn.GELU(),
+            nn.Linear(hidden_dim * 2, hidden_dim * 6 * n_blocks),
         )
 
-        # AdaLN-Zero: gamma = beta = alpha = 0 at init, so blocks start with
-        # branches gated off; with the zero-init projection the model is
-        # identity at init.
-        nn.init.zeros_(self.pool_stream_out.weight)
-        nn.init.zeros_(self.pool_stream_out.bias)
-        nn.init.zeros_(self.local_perception[-1].weight)
-        nn.init.zeros_(self.local_perception[-1].bias)
+        # AdaLN-Zero: all branch-wise gamma, beta, and alpha values start at 0.
+        nn.init.zeros_(self.output_head[-1].weight)
+        nn.init.zeros_(self.output_head[-1].bias)
 
     def forward(self, x):
-        """(B, in_dim, D, H, W) to (B, n_blocks, 3, hidden_dim, D, H, W)."""
-        B, _, D, H, W = x.shape
-        pool_stream = self.pool_stream_encoder(x)
-        pool_stream = self.pool_stream_out(pool_stream.mean(dim=[2, 3, 4]))
-
-        local_perception_stream = self.local_perception(x)
-        cond = local_perception_stream + pool_stream.view(B, -1, 1, 1, 1)
-        return cond.view(B, self.n_blocks, 2, self.hidden_dim, D, H, W)
+        """Return branch-wise channel modulation as (B, blocks, branches, params, C, 1, 1, 1)."""
+        B = x.shape[0]
+        pooled = self.encoder(x).mean(dim=(2, 3, 4))
+        conditioning = torch.tanh(self.output_head(pooled))
+        return conditioning.view(
+            B, self.n_blocks, 2, 3, self.hidden_dim, 1, 1, 1
+        )
     
 
 class LOGLO_Block(nn.Module):
-    def __init__(self, hidden_dim, patch_size=(8, 8, 8)):
+    def __init__(self, hidden_dim, patch_size=(8, 8, 8), conditioned=True):
         super(LOGLO_Block, self).__init__()
         self.hidden_dim = hidden_dim
         self.patch_size = patch_size
@@ -107,30 +105,56 @@ class LOGLO_Block(nn.Module):
         # --- High-freq branch (pointwise MLP only) ---
         self.highfreq_mlp = MLP_Block(hidden_dim, hidden_dim, hidden_dim)
 
-        self.norm = nn.GroupNorm(num_groups=1, num_channels=hidden_dim, affine=False)
+        self.norm = (
+            nn.GroupNorm(
+                num_groups=hidden_dim, num_channels=hidden_dim, affine=False
+            )
+            if conditioned else None
+        )
         self.activation = nn.GELU()
     
-    def forward(self, z, z_hat, z_prime, gamma=None, beta=None):
+    def forward(self, z, z_hat, z_prime,
+                gamma_global=None, beta_global=None, alpha_global=None,
+                gamma_local=None, beta_local=None, alpha_local=None):
         B = z.shape[0]
         D, H, W = z.shape[2], z.shape[3], z.shape[4]
         pD, pH, pW = self.patch_size
         grid_size = (D // pD, H // pH, W // pW)
-        
-        if gamma is not None:
-            z = self.norm(z)
-            z_hat = self.norm(z_hat)
-            z = z * (1 + gamma) + beta
-            z_hat = z_hat * (1 + gamma) + beta
-            
-        y_global = self.global_mlp_outer(
-            self.activation(self.global_spectral(z) + self.global_mlp_inner(z))
-        ) + self.global_mlp_skip(z)
-        
-        z_hat, _ = patchify_3d(z_hat, self.patch_size)
-        y_local = self.local_mlp_outer(
-            self.activation(self.local_spectral(z_hat) + self.local_mlp_inner(z_hat))
-        ) + self.local_mlp_skip(z_hat)
-        y_local_full = unpatchify_3d(y_local, B, grid_size)
+
+        if gamma_global is not None:
+            if self.norm is None:
+                raise ValueError("Conditioning parameters require a conditioned block")
+            z_mod = self.norm(z) * (1 + gamma_global) + beta_global
+            z_hat_mod = self.norm(z_hat) * (1 + gamma_local) + beta_local
+        else:
+            # Vanilla LOGLO: no normalization or adaptive modulation.
+            z_mod = z
+            z_hat_mod = z_hat
+
+        global_transform = self.global_mlp_outer(
+            self.activation(
+                self.global_spectral(z_mod) + self.global_mlp_inner(z_mod)
+            )
+        )
+        if alpha_global is not None:
+            global_transform = alpha_global * global_transform
+        y_global = self.global_mlp_skip(z) + global_transform
+
+        z_hat_mod_patches, _ = patchify_3d(z_hat_mod, self.patch_size)
+        z_hat_skip_patches, _ = patchify_3d(z_hat, self.patch_size)
+        local_transform = self.local_mlp_outer(
+            self.activation(
+                self.local_spectral(z_hat_mod_patches)
+                + self.local_mlp_inner(z_hat_mod_patches)
+            )
+        )
+        local_transform = unpatchify_3d(local_transform, B, grid_size)
+        local_skip = unpatchify_3d(
+            self.local_mlp_skip(z_hat_skip_patches), B, grid_size
+        )
+        if alpha_local is not None:
+            local_transform = alpha_local * local_transform
+        y_local_full = local_skip + local_transform
 
         y_highfreq = self.highfreq_mlp(z_prime)
 
@@ -203,8 +227,15 @@ class LOGLO_FNO(nn.Module):
         z_prime = self.highfreq_lifting(x_h)
 
         for i, block in enumerate(self.loglo_blocks):
+            global_conditioning = conditioning[:, i, 0]
+            local_conditioning = conditioning[:, i, 1]
             z = block(z, z_hat, z_prime,
-                      conditioning[:, i, 0], conditioning[:, i, 1])
+                      global_conditioning[:, 0],
+                      global_conditioning[:, 1],
+                      global_conditioning[:, 2],
+                      local_conditioning[:, 0],
+                      local_conditioning[:, 1],
+                      local_conditioning[:, 2])
 
             if i < self.n_blocks - 1:
                 z_hat = z  # block patchifies internally ⇒ v1's z_hat = patchify(z)
@@ -249,7 +280,9 @@ class VanillaLOGLO_FNO(nn.Module):
 
         # ---- LOGLO blocks ----
         self.loglo_blocks = nn.ModuleList(
-            [LOGLO_Block(hidden_dim=self.hidden_dim, patch_size=self.patch_size)
+            [LOGLO_Block(hidden_dim=self.hidden_dim,
+                         patch_size=self.patch_size,
+                         conditioned=False)
              for _ in range(self.n_blocks)]
         )
 
@@ -304,4 +337,3 @@ if __name__ == "__main__":
     print(f"AuxHead — Aux: {aux_out.shape}")
 
     torchinfo.summary(model, input_data=[test_data, test_action])
-        
