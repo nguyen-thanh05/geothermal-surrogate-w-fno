@@ -4,7 +4,7 @@ data:
 
 model:
   type: loglo_v2
-  in_dim: 8          # 4 state + 4 static (por_m, por_f, perm_m, perm_f); modulation encoder sees action + state internally
+  in_dim: 8          # 4 state + 4 static (por_m, por_f, perm_m, perm_f); modulation encoder sees action + static only
   out_dim: 4
   lifting_dim: 256
   projection_dim: 256

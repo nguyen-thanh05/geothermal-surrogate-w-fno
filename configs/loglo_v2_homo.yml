@@ -4,7 +4,7 @@ data:
 
 model:
   type: loglo_v2
-  in_dim: 4          # 4 state; modulation encoder sees action + state internally
+  in_dim: 4          # 4 state; modulation encoder sees action only
   out_dim: 4
   lifting_dim: 256
   projection_dim: 256

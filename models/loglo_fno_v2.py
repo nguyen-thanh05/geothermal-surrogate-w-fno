@@ -50,9 +50,7 @@ class ModulationEncoder(nn.Module):
         super(ModulationEncoder, self).__init__()
         self.hidden_dim = hidden_dim
         self.n_blocks = n_blocks
-        self.pool_stream_encoder = MLP_Block(in_dim, hidden_dim, hidden_dim)
-        self.pool_stream_out = nn.Linear(hidden_dim, hidden_dim * 2 * n_blocks) # gamma, beta and alpha
-        
+
         self.local_perception = nn.Sequential(
             nn.Conv3d(in_dim, hidden_dim, kernel_size=1),
             nn.GELU(),
@@ -62,23 +60,17 @@ class ModulationEncoder(nn.Module):
             nn.GELU(),
             nn.Conv3d(hidden_dim, hidden_dim * 2 * n_blocks, kernel_size=1)
         )
-        
-        # AdaLN-Zero: gamma = beta = alpha = 0 at init, so blocks start with
+
+        # AdaLN-Zero: gamma = beta = 0 at init, so blocks start with
         # branches gated off; with the zero-init projection the model is
         # identity at init.
-        nn.init.zeros_(self.pool_stream_out.weight)
-        nn.init.zeros_(self.pool_stream_out.bias)
         nn.init.zeros_(self.local_perception[-1].weight)
         nn.init.zeros_(self.local_perception[-1].bias)
 
     def forward(self, x):
-        """(B, in_dim, D, H, W) to (B, n_blocks, 3, hidden_dim, D, H, W)."""
+        """(B, in_dim, D, H, W) to (B, n_blocks, 2, hidden_dim, D, H, W)."""
         B, _, D, H, W = x.shape
-        pool_stream = self.pool_stream_encoder(x)
-        pool_stream = self.pool_stream_out(pool_stream.mean(dim=[2, 3, 4]))
-
-        local_perception_stream = self.local_perception(x)
-        cond = local_perception_stream + pool_stream.view(B, -1, 1, 1, 1)
+        cond = self.local_perception(x)
         return cond.view(B, self.n_blocks, 2, self.hidden_dim, D, H, W)
     
 
@@ -107,7 +99,7 @@ class LOGLO_Block(nn.Module):
         # --- High-freq branch (pointwise MLP only) ---
         self.highfreq_mlp = MLP_Block(hidden_dim, hidden_dim, hidden_dim)
 
-        self.norm = nn.GroupNorm(num_groups=hidden_dim, num_channels=hidden_dim, affine=False)
+        self.norm = nn.GroupNorm(num_groups=1, num_channels=hidden_dim, affine=False)
         self.activation = nn.GELU()
     
     def forward(self, z, z_hat, z_prime, gamma=None, beta=None):
@@ -138,7 +130,7 @@ class LOGLO_Block(nn.Module):
 
         y_highfreq = self.highfreq_mlp(z_prime)
 
-        return self.norm(y_global + y_local_full + y_highfreq)
+        return self.activation(y_global + y_local_full + y_highfreq)
     
 
 class LOGLO_FNO(nn.Module):
@@ -168,7 +160,7 @@ class LOGLO_FNO(nn.Module):
         self.grid_embedding = GridEmbeddingND(in_channels=self.in_dim,
                                               dim=3,
                                               grid_boundaries=spatial_grid_boundaries)
-        self.global_lifting = MLP_Block(self.in_dim, self.hidden_dim, self.lifting_dim)
+        self.global_lifting = MLP_Block(self.in_dim + 3, self.hidden_dim, self.lifting_dim)
 
         # ---- Local lifting (patches, independent representation) ----
         self.local_lifting = MLP_Block(self.in_dim + 3, self.hidden_dim, self.lifting_dim)
@@ -188,7 +180,7 @@ class LOGLO_FNO(nn.Module):
         nn.init.zeros_(self.projection.fc2.bias) # zero init, the very first prediction is u_t+1 = u_t
 
         self.modulation_encoder = ModulationEncoder(
-            in_dim=action_channels + self.in_dim,
+            in_dim=action_channels,
             hidden_dim=self.hidden_dim,
             n_blocks=self.n_blocks,
         )
@@ -197,11 +189,12 @@ class LOGLO_FNO(nn.Module):
     def forward(self, x, action):
         x_input = x
 
-        conditioning = self.modulation_encoder(torch.cat([action, x_input], dim=1))
+        conditioning = self.modulation_encoder(action)
 
-        z = self.global_lifting(x)
+        x_grid = self.grid_embedding(x)
+        z = self.global_lifting(x_grid)
 
-        z_hat = self.local_lifting(self.grid_embedding(x))
+        z_hat = self.local_lifting(x_grid)
 
         x_h = highfreq_3d(x, kernel_size=self.highfreq_kernel)
         z_prime = self.highfreq_lifting(x_h)
@@ -238,12 +231,12 @@ class VanillaLOGLO_FNO(nn.Module):
         self.patch_size = patch_size
         self.highfreq_kernel = highfreq_kernel
 
-        # ---- Global lifting ----
+        # ---- Global lifting (grid coords + Conv3d) ----
         spatial_grid_boundaries = [[0.0, 1.0]] * 3
         self.grid_embedding = GridEmbeddingND(in_channels=self.in_dim,
                                               dim=3,
                                               grid_boundaries=spatial_grid_boundaries)
-        self.global_lifting = MLP_Block(self.in_dim, self.hidden_dim, self.hidden_dim)
+        self.global_lifting = MLP_Block(self.in_dim + 3, self.hidden_dim, self.hidden_dim)
 
         # ---- Local lifting (grid coords: patches lose global position) ----
         self.local_lifting = MLP_Block(self.in_dim + 3, self.hidden_dim, self.hidden_dim)
@@ -266,9 +259,10 @@ class VanillaLOGLO_FNO(nn.Module):
         # x: (B, in_dim, D, H, W) — state + action already concatenated upstream.
         x_input = x
 
-        z = self.global_lifting(x)
+        x_grid = self.grid_embedding(x)
+        z = self.global_lifting(x_grid)
 
-        z_hat = self.local_lifting(self.grid_embedding(x))
+        z_hat = self.local_lifting(x_grid)
 
         x_h = highfreq_3d(x, kernel_size=self.highfreq_kernel)
         z_prime = self.highfreq_lifting(x_h)
@@ -308,4 +302,3 @@ if __name__ == "__main__":
     print(f"AuxHead — Aux: {aux_out.shape}")
 
     torchinfo.summary(model, input_data=[test_data, test_action])
-        
