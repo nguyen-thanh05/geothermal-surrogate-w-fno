@@ -156,11 +156,19 @@ provide a practical alternative: rather than enforcing the governing equations
 directly, they learn the input-output behavior of the simulator from generated
 trajectory data.
 \cite{liangSurrogateModelingGeothermal} train several deep learning models,
-including UNet and Fourier Neural Operator variants, on 1200 anisotropic
-three-dimensional fault-dominated geothermal simulations. Their models predict
-3D temperature fields across eight discrete time steps,
-demonstrating that neural surrogates can capture important spatiotemporal
-patterns in geothermal systems.
+including UNet and Fourier Neural Operator (FNO) variants, on 1200 anisotropic
+three-dimensional fault-dominated geothermal simulations, and predict 3D
+temperature fields at eight discrete time steps.
+More recently,\cite{xueRobustPhysicsconstrainedNeural2026} construct a substantially larger
+dataset with more than 9000 three-dimensional reservoir simulations over a
+20-year period, varying properties such as reservoir depth, permeability and porosity anisotropic realizations, well controls 
+and other geological parameters. Their model adapts the FNO architecture with
+physics-inspired loss terms to predict 3D pressure and temperature fields across the fixed
+20-year horizon. 
+Together, these studies demonstrate that neural surrogates can approximate
+complex geothermal reservoir dynamics across high-dimensional spatial and
+temporal settings.
+
 
 
 \todo{state the gap / what is missing in prior work, then the contributions.}
@@ -178,60 +186,132 @@ In this work we:
   \item \todo{ablations / additional contributions.}
 \end{itemize}
 
-%============================== 2. Related Work ================================
-\section{Related Work}
-\label{sec:related}
-
-
-A Neural Operator is defined as a function $\mathcal{G}: \mathcal{A} \ to \mathcal{U}$ where both $\mathcal{A}$ and $\mathcal{U}$ 
-are Banach spaces defined on bounded domain. Fourier Neural Operator (FNO), following \cite{li2021fno}, consists of three 
-components: a lifting operator, a sequence of Fourier layers, and a projection operator. Let $\mathcal{P}$ denote the lifting map, which embeds the input into a higher-dimensional latent space; let $\mathcal{L}_l$ denote the $l$-th Fourier layer; and let $\mathcal{Q}$ denote the projection map, which returns the latent representation to the target output dimension. The overall operator can then be written as
-\begin{equation}
-u = \mathcal{G}(a) = (\mathcal{Q} \circ \mathcal{L}_n \circ \cdots \circ \mathcal{L}_2 \circ \mathcal{L}_1 \circ \mathcal{P})(a).
-\end{equation}
-Each Fourier layer applies a spectral convolution by transforming the input to Fourier space using the Fast Fourier Transform, multiplying a selected set of low-frequency modes by learnable weights, and transforming the result back to physical space. This spectral update is combined with a pointwise neural network and passed through a nonlinear activation:
-\begin{equation}
-\mathcal{L}_l(x) = \sigma\left(\mathcal{F}^{-1}\left(\mathcal{F}(x) \odot \mathcal{W}_l\right) + \mathrm{MLP}(x)\right).
-\end{equation}
-Here, $\mathcal{W}_l$ denotes the learnable spectral weights for the $l$-th Fourier layer. 
-
-FNO and other its variants achieved impressive performance on a wide variety of tasks, including [PLACEHOLDER].  
-
-
-UNet-based models leverage convolutional encoders and decoders to learn
-multiscale spatial features, making them a natural fit for grid-based simulation
-data. Fourier Neural Operators (FNOs) and their variants approach the problem
-from a different angle: grounded in the theory of learning mappings between
-function spaces, they parameterize the solution operator directly in the
-frequency domain, offering resolution-invariant learning with strong theoretical
-foundations. Among these variants, the Local--Global Fourier Neural Operator
-(LoGlo-FNO) extends the standard FNO by explicitly learning high-frequency
-features through local convolutions alongside the global spectral modes,
-addressing a well-known limitation of purely Fourier-based approaches. Transolver
-generalizes the operator-learning paradigm further by attending over learned
-physical states rather than fixed spatial positions, offering flexibility for
-problems with complex geometries. Graph neural networks have also attracted
-attention, as they naturally represent the connectivity between grid blocks in a
-manner analogous to flux computation in discretized conservation laws.
-
-Beyond architecture, training strategies also play a critical role in surrogate
-model quality. Autoregressive surrogate models are prone to error accumulation
-over long rollouts, and techniques such as the pushforward trick---which trains
-the model on its own predictions rather than solely on ground-truth
-inputs---have been shown to significantly improve temporal stability.
-
-While the list above is far from exhaustive and the surrogate-modeling literature
-continues to grow rapidly, these approaches represent the principal architectural
-families relevant to our setting. In this work, we focus on architectures that
-operate on structured 3D grids, which rules out graph-based methods due to the
-prohibitive memory cost of constructing graphs over the large number of nodes in
-our discretization. We therefore benchmark against UNet, FNO, and Transolver as
-baselines, and build our primary model on the LoGlo-FNO architecture, introducing
-several modifications to adapt it to 3D non-isothermal geothermal simulation.
-
 %================================ 3. Methods ===================================
 \section{Methods}
 \label{sec:methods}
+
+\subsection{Background on Fourier Neural Operator and LOGLO-FNO}
+
+A neural operator learns a map between function spaces,
+$\mathcal{G}: \mathcal{A}\rightarrow\mathcal{U}$, where $\mathcal{A}$ and
+$\mathcal{U}$ are Banach spaces defined on a bounded domain. Following
+\cite{li2021fno}, a Fourier Neural Operator (FNO) represents this map with
+three components: a lifting map $\mathcal{P}$ that embeds the input field into a
+higher-dimensional latent space, a sequence of Fourier layers
+$\{\mathcal{L}_{\ell}\}_{\ell=0}^{L-1}$, and a projection map $\mathcal{Q}$ that
+returns the latent representation to the output dimension:
+\begin{align}
+z^{0} &= \mathcal{P}(a), &
+z^{\ell+1} &= \mathcal{L}_{\ell}(z^{\ell}), &
+u &= \mathcal{Q}(z^{L}).
+\end{align}
+Each Fourier layer transforms the latent field to Fourier space, applies
+learnable weights to a retained set of modes, transforms the result back to
+physical space, and combines the spectral update with a pointwise neural
+network:
+\begin{align}
+\mathcal{L}_{\ell}(z)
+&= \sigma\!\left(\mathcal{K}_{\ell}(z)+\mathrm{MLP}_{\ell}(z)\right), \\
+\mathcal{K}_{\ell}(z)
+&= \mathcal{F}^{-1}\!\left(
+  \mathcal{W}_{\ell}\odot\mathcal{F}(z)
+\right).
+\end{align}
+Here, $\mathcal{F}$ denotes the Fourier transform, $\mathcal{W}_{\ell}$ denotes
+the learnable spectral weights for the retained modes in layer $\ell$,
+$\mathrm{MLP}_{\ell}$ is a pointwise MLP, and $\sigma$ is a nonlinear activation.
+This spectral convolution is not a full convolution in the sense of the
+convolution theorem; it is a truncated convolution that retains only a selected
+set of lower-frequency modes. The truncation allows FNOs to model large-scale
+structure efficiently, but it also limits their ability to capture localized
+high-frequency features.
+
+FNOs and related variants have achieved strong performance on a wide variety of
+operator-learning tasks, including [PLACEHOLDER]. However, the standard FNO
+architecture can struggle when the solution requires localized high-frequency
+detail because the spectral convolution explicitly truncates higher Fourier
+modes. This limitation is important for turbulent flows such as high-Reynolds
+number Navier--Stokes problems and for geothermal reservoir dynamics, where
+irregular well controls interact with complex porosity and permeability
+anisotropy. To increase high-frequency modeling capacity, the LOGLO-FNO
+architecture~\citep{loglofno} augments the global FNO branch with local and
+high-frequency branches. \cref{fig:loglo-fno} shows the internal structure of a
+single LOGLO-FNO block.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{figures/vanilla_loglo.pdf}
+  \caption{A single Fourier block in the LOGLO-FNO architecture, as documented in \cite{loglofno}.
+  The three branches are color coded: global spectral in red, local patch in yellow, and high-frequency in green.}
+  \label{fig:loglo-fno}
+\end{figure}
+
+More concretely, the global, local, and high-frequency branches are lifted
+separately using three different lifting maps. Let $x$ denote the input field.
+The initial latent fields are
+\begin{align}
+z^{(0)} &= \mathcal{P}_{glob}(x), &
+\hat{z}^{(0)} &= \mathcal{P}_{loc}(x), &
+z'^{(0)} &= \mathcal{P}_{hf}\!\left(\operatorname{HF}(x)\right),
+\end{align}
+where $\mathcal{P}_{glob}$, $\mathcal{P}_{loc}$, and $\mathcal{P}_{hf}$ are the
+global, local, and high-frequency lifting maps, respectively.
+Inside block $\ell$, the global branch (red in \cref{fig:loglo-fno}) closely
+resembles a standard FNO block, with an additional outer MLP and skip MLP:
+\begin{align}
+\mathcal{L}_{glob}^{\ell}(z)
+&= \mathrm{MLP}_{\mathrm{skip},glob}^{\ell}(z)
+ + \mathrm{MLP}_{\mathrm{outer},glob}^{\ell}\!
+   \left[
+   \sigma\!\left(
+     \mathcal{K}_{trunc}^{\ell}(z)
+     + \mathrm{MLP}_{\mathrm{inner},glob}^{\ell}(z)
+   \right)
+   \right].
+\end{align}
+
+The local branch (yellow in \cref{fig:loglo-fno}) has the same block structure
+as the global branch, but uses a different Fourier operator. Instead of applying
+a truncated Fourier operator over the entire domain, we first divide the domain
+into patches and then apply a Fourier operator that retains all modes within
+each patch. This allows the local branch to capture localized high-frequency
+features without the computational cost of a full-resolution Fourier operator
+over the entire domain:
+\begin{align}
+  \hat{z} &= \operatorname{Patchify}(z),\\
+  \mathcal{L}_{loc}^{\ell}(\hat{z})
+  &= \mathrm{MLP}_{\mathrm{skip},loc}^{\ell}(\hat{z})
+  + \mathrm{MLP}_{\mathrm{outer},loc}^{\ell}\!
+    \left[
+    \sigma\!\left(
+      \mathcal{K}_{all}^{\ell}(\hat{z})
+      + \mathrm{MLP}_{\mathrm{inner},loc}^{\ell}(\hat{z})
+    \right)
+    \right].
+\end{align}
+
+Finally, the high-frequency operator is defined as
+\begin{equation}
+z' = \operatorname{HF}(z)
+= z-\operatorname{Interpolate}\!\left(\operatorname{AvgPool}(z)\right).
+\end{equation}
+It extracts high-frequency information by removing a low-frequency approximation
+obtained through average pooling and interpolation. This high-frequency stream
+is then processed by a pointwise MLP (green in \cref{fig:loglo-fno}) to capture
+features that the local branch may miss.
+
+The three branch outputs are fused by element-wise addition and passed through a
+nonlinear activation before entering the next block. After the first block, the
+local branch uses the fused latent representation, and the high-frequency
+residual is recomputed from that same fused representation. Alongside the novel architecture,
+\cite{loglofno} also propose a training loss called \emph{Radially Binned Spectral Loss} to encourage
+the model to sharpen fine details predictions. Together, they achieve an impressive improvement 
+from 12\% to 40\% relative error reduction on multiple benchmarks compared to a standard FNO. In this work,
+we adapt the LOGLO-FNO architecture to our 3D geothermal surrogate modeling task with new well control conditioning and 
+training modifications that lead to stable autoregressive rollouts and strong performance with very limited training data. We describe these modificaitions
+in detail in \cref{sec:arch}.
+
+
 
 %---------------------------- 3.1 Dataset generation --------------------------
 \subsection{Dataset Generation}
