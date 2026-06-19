@@ -35,6 +35,7 @@
 \newcommand{\action}{\mathbf{a}}           % well-control action
 \newcommand{\model}{\mathcal{G}_\theta}    % learned operator
 \newcommand{\R}{\mathbb{R}}
+\newcommand{\fainttablerule}{\noalign{\vskip1pt{\color{black!20}\hrule height 0.03pt}\vskip1pt}}
 \DeclareMathOperator{\diag}{diag}
 
 % Editorial markers -- delete before submission.
@@ -76,10 +77,10 @@
        Operator as an Autoregressive Neural Surrogate for Geothermal Simulation}
 
 \author*[1]{\fnm{Thanh} \sur{Nguyen}}\email{thanh2@ualberta.com}
-% \author[1]{\fnm{First} \sur{Author}}\email{}   % \todo{co-authors}
+\author[1]{\fnm{Juliana} \sur{Leung}}\email{juliana2@ualberta.ca}   % \todo{co-authors}
 
-\affil*[1]{\orgdiv{\todo{Department}}, \orgname{\todo{Organization}},
-  \orgaddress{\city{\todo{City}}, \country{\todo{Country}}}}
+\affil*[1]{\orgdiv{Department of Civil \& Environmental Engineering}, \orgname{University of Alberta},
+  \orgaddress{\city{Edmonton}}, \country{Canada}}
 
 %------------------------------- Abstract -------------------------------------
 \abstract{%
@@ -349,7 +350,7 @@ We want to create a reservoir with realistic properties. From the Ngatamariki ge
 \cite{} presents matrix porosity ranging from 3\% to 20\%, and matrix permeability from \SI{0.00037}{\milli\darcy} to \SI{0.25}{\milli\darcy}, depending on whether the core
 sample is pore-dominated or microfracture-dominated. Also in the Taupo Volcanic Zone, natural fractures in different rock types
 can have permeability ranging from \SI{30}{\milli\darcy} to \SI{130}{\milli\darcy} \cite{}. Inspired by the two studies, for our homogeneous dataset, we choose matrix porosity
-to be 5\%, matrix permeability \SI{0.1}{\milli\darcy}, fracture porosity 0.05\% and fracture permeability \SI{50}{\milli\darcy}. Other simulation properties are included in table 1.
+to be 5\%, matrix permeability \SI{0.1}{\milli\darcy}, fracture porosity 0.5\% and fracture permeability \SI{50}{\milli\darcy}. Other simulation properties are summarized in \cref{tab:sim-props}.
 
 
 For the heterogeneous dataset, we allow anisotropic variations in porosity and permeability, but the values are still within the range
@@ -358,7 +359,7 @@ to generate 400 matrix porosity realizations and 400 fracture porosity realizati
 \SI{10}{\meter}, \SI{150}{\meter} search
 radius, range \SI{100}{\meter}, nugget 0.1, and sill 0.9. The vertical variogram
 is spherical with 5 lags of \SI{10}{\meter},
-\SI{80}{\meter} search radius, range \SI{50}{\meter}, and same nugget and sill of 0.1 and 0.9 respectively.
+\SI{80}{\meter} search radius, range \SI{50}{\meter}, and same nugget and sill of 0.1 and 0.9 respectively. The variogram parameters are listed in \cref{tab:hetero-variogram}.
 Matrix porosity is drawn with mean 0.05 and variance $2.5 \times 10^{-5}$, and
 fracture porosity with mean 0.005 and variance $1 \times 10^{-6}$. To ensure
 every block sustains some flow, we clip matrix porosity to $[0.035, 0.065]$ and
@@ -377,34 +378,59 @@ Fracture permeability follows a different formula
     \frac{\phi - \mu_\phi}{\sigma_\phi}\right)\ \si{\milli\darcy},
   \label{eq:k-fracture}
 \end{equation}
-which keeps fracture permeability within $[5, 125]\ \si{\milli\darcy}$. More details are also included in Table 1. 
+which keeps fracture permeability within $[5, 125]\ \si{\milli\darcy}$. These fixed and heterogeneous property definitions are summarized in \cref{tab:sim-props}. 
 
 \begin{table}[t]
   \centering
   \caption{Simulation properties.}
-  \label{tab:homo-props}
-  \begin{tabular}{lcc}
+  \label{tab:sim-props}
+  \scriptsize
+  \setlength{\tabcolsep}{2pt}
+  \begin{tabular}{@{}lp{0.22\textwidth}p{0.55\textwidth}@{}}
     \toprule
-                 & Matrix & Fracture \\
+    Property & Homo & Hetero \\
     \midrule
-    Porosity          & 0.05  & 0.005 \\
-    Permeability (mD) & 0.1   & 50    \\
+    Initial pressure & \multicolumn{2}{>{\centering\arraybackslash}p{0.77\textwidth}@{}}{\SI{25}{\mega\pascal}} \\
+    \fainttablerule
+    Initial temperature & \multicolumn{2}{>{\centering\arraybackslash}p{0.77\textwidth}@{}}{\SI{170}{\celsius}} \\
+    \fainttablerule
+    Fracture spacing & \multicolumn{2}{>{\centering\arraybackslash}p{0.77\textwidth}@{}}{\SI{2}{\meter}} \\
+    \fainttablerule
+    Matrix porosity & \(\phi_m=0.05\) & \(\phi_m\sim\mathcal{N}(0.05,\,2.5\times10^{-5})\), clipped \([0.035,0.065]\) \\
+    \fainttablerule
+    Fracture porosity & \(\phi_f=0.005\) & \(\phi_f\sim\mathcal{N}(0.005,\,1\times10^{-6})\), clipped \([0.002,0.008]\) \\
+    \fainttablerule
+    Matrix perm. & \(k_m=\SI{0.1}{\milli\darcy}\) & \(\begin{aligned}[t]
+      k_m&=\exp(29.182291\phi_m-4.017112)\ \si{\milli\darcy},\\
+      k_m&\in[0.05,0.12]\ \si{\milli\darcy}
+    \end{aligned}\) \\
+    \fainttablerule
+    Fracture perm. & \(k_f=\SI{50}{\milli\darcy}\) & \(\begin{aligned}[t]
+      z_f&=(\phi_f-\mu_{\phi})/\sigma_{\phi},\\
+      k_f&=\exp(3.21888+0.536479z_f)\ \si{\milli\darcy},\\
+      k_f&\in[5,125]\ \si{\milli\darcy}
+    \end{aligned}\) \\
     \bottomrule
   \end{tabular}
 \end{table}
 
 \begin{table}[t]
   \centering
-  \caption{Heterogeneous-dataset geostatistical parameters.}
-  \label{tab:hetero-props}
-  \todo{fill variogram / distribution parameters table}
+  \caption{Variogram parameters used for heterogeneous porosity realizations.}
+  \label{tab:hetero-variogram}
   \begin{tabular}{lcc}
     \toprule
-                 & Matrix & Fracture \\
+    Parameter & Horizontal variogram & Vertical variogram \\
     \midrule
-    Mean porosity     & 0.05 & 0.005 \\
-    Variance          & $2.5\times10^{-5}$ & $1\times10^{-6}$ \\
-    Clip range        & $[0.035, 0.065]$ & $[0.002, 0.008]$ \\
+    Simulation type & \multicolumn{2}{c}{Unconditional Gaussian simulation} \\
+    Variogram model & Spherical & Spherical \\
+    Directionality & Omnidirectional & Omnidirectional \\
+    Number of lags & 10 & 5 \\
+    Lag spacing & \(\SI{10}{\meter}\) & \(\SI{10}{\meter}\) \\
+    Search radius & \(\SI{150}{\meter}\) & \(\SI{80}{\meter}\) \\
+    Range & \(\SI{100}{\meter}\) & \(\SI{50}{\meter}\) \\
+    Nugget & 0.1 & 0.1 \\
+    Sill & 0.9 & 0.9 \\
     \bottomrule
   \end{tabular}
 \end{table}
