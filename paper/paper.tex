@@ -454,37 +454,48 @@ well-control schedules, which in turn drive complex, chaotic reservoir dynamics 
 test our surrogate model's ability to learn and generalize with limited data.
 
 %---------------------------- 3.2 Problem formulation -------------------------
-\subsection{Learning Problem Formulation}
-\label{sec:problem}
+  \subsection{Model Description}
+  \label{sec:problem}
 
-  % After running the 400 simulations for each dataset, we extract the pressure and
-  % temperature fields at weekly intervals from the STARS output (.sr3) files. Each field has four channels: matrix temperature,
-  % fracture temperature, matrix pressure, and fracture pressure, across 156 timesteps. For each dataset, 
-  % we split the 400 trajectories into 300 for training and 100 for testing.
-
-  The task for our surrogate model is to predict the next pressure and temperature fields
-  given the current pressure and temperature, as well as the current well control action.
-  Formally, let state $\svec_t$ be a tuple of pressure and temperature fields at time $t$
-  $[T_{\text{matrix}}(t), T_{\text{fracture}}(t), P_{\text{matrix}}(t), P_{\text{fracture}}(t)]$, $\action_t$ be 
-  the well control signal (rate constraint), and $\model$ be the surrogate neural network
+  The surrogate model is trained to predict the next reservoir state from the
+  current pressure-temperature state and the contemporaneous well-control action.
+  Let
+  \[
+  \svec_t =
+  [T_{\text{matrix}}(t), T_{\text{fracture}}(t),
+   P_{\text{matrix}}(t), P_{\text{fracture}}(t)]
+  \]
+  denote the reservoir state at time \(t\), where each component is represented on
+  the \(64 \times 32 \times 16\) three-dimensional grid described above. The
+  control input \(\action_t\) is defined on the same grid and contains two
+  channels: the surface well-rate constraint, duplicated over perforation layers
+  3 through 12, and a binary shut-in indicator, also duplicated over the same
+  perforation interval. The neural surrogate \(\model\) therefore represents the
+  one-step transition map
   \begin{equation}
-    \svec_{t+1} = \model(\svec_t, \action_t)
+    \svec_{t+1} = \model(\svec_t, \action_t).
   \end{equation}
-  Even with the random actions, temperature and pressure evolve smoothly, thus consecutive states are not drastically different from each other. 
-  Instead of our model having to reconstruct the state at each time step, we can give it a hand by reformulating the problem as an Euler discretization 
-  of the reservoir dynamics
+
+  Because pressure and temperature evolve smoothly over consecutive weekly time
+  steps, the dominant part of the state remains nearly unchanged from one step to
+  the next, even under randomized well controls. We therefore formulate the model
+  as a residual update, equivalent to an Euler discretization of the reservoir
+  dynamics:
   \begin{equation}
-    \frac{\svec_{t+1} - \svec_t}{\Delta t} = \model(\svec_t, \action_t).
+    \frac{\svec_{t+1} - \svec_t}{\Delta t}
+    = \model(\svec_t, \action_t).
     \label{eq:euler}
   \end{equation}
-  Taking a unit step size $\Delta t = 1$,
+  With unit step size \(\Delta t = 1\), this gives
   \begin{equation}
-    \svec_{t+1} = \svec_t + \model(\svec_t, \action_t),
+    \svec_{t+1} = \svec_t + \model(\svec_t, \action_t).
     \label{eq:update}
   \end{equation}
-  This way, the model can focus its capacity on learning the component that actually changes between steps, 
-  rather than repeatedly reconstructing the large, near-constant background field. Conveniently, this is the same as having a 
-  clean residual connection from the input state $\svec_t$ to the prediction output $\svec_{t+1}$ (See Algorithm 2, and Figure 1).
+  This residual parameterization allows the network to focus on the incremental
+  state change induced by the dynamics and well controls, rather than repeatedly
+  reconstructing the large background field. It also corresponds to an explicit
+  skip connection from the input state \(\svec_t\) to the predicted next state
+  \(\svec_{t+1}\) (see Algorithm 2 and Figure 1).
   
   It is noteworthy that our formulation assumes Markov property: to predict the next state $\svec_{t+1}$, we only need access to $\svec_t$
   and $\action_t$, and not the entire history. This is appropriate because the governing mass and energy balance
@@ -495,113 +506,138 @@ test our surrogate model's ability to learn and generalize with limited data.
   for the surrogate model to
   have access to $\svec_t$ and $\action_t$ only, and not the full trajectory up to the prediction point.   
 
-  Many downstream tasks require quantities beyond the raw state fields, such as well level diagnostics, 
-  production metrics, or other derived outputs that the bare state does not expose directly. Rather than computing 
-  these in a separate post-processing step, we can extract them jointly by attaching a lightweight auxiliary head to the surrogate. 
-  Given the current state and the predicted next state, this head maps to a vector of additional quantities of interest,
+  We adapt the LOGLO-FNO architecture to learn the surrogate transition $\model$.
+  Its local-global decomposition is well aligned with geothermal reservoir dynamics,
+  where pressure and temperature evolution contain both field-scale transport and
+  localized well-driven responses. In our implementation, the reservoir state and
+  well-control action are passed to the network through separate inputs. For the
+  homogeneous case, the state input is $\svec_t$, while the action input contains
+  the well-rate field and a binary well mask. For the heterogeneous case, the
+  static porosity and permeability fields are appended to the state input and are
+  also provided to the action-conditioning pathway.
+
+  Rather than concatenating the action directly with the dynamic state channels,
+  we condition the LOGLO-FNO blocks through Adaptive Layer Normalization (AdaLN).
+  A convolutional modulation encoder maps the action tensor $\action_t$ to
+  block-wise affine modulation parameters,
   \begin{equation}
-    \mathbf{q}_t = \mathcal{H}_\psi(\svec_t, \svec_{t+1}) = \mathcal{H}_\psi\!\left(\svec_t, \svec_t + \model(\svec_t, \action_t)\right),
+    \{(\gamma^\ell,\beta^\ell)\}_{\ell=0}^{L-1}
+    = \mathcal{E}_\phi(\action_t),
+  \end{equation}
+  where $\gamma^\ell,\beta^\ell \in
+  \R^{C \times 16 \times 64 \times 32}$ have the same spatial and channel
+  dimensions as the hidden LOGLO-FNO representation. This conditioning strategy
+  follows the FiLM/AdaLN family of modulation methods~\cite{film}. The final
+  convolution in $\mathcal{E}_\phi$ is zero-initialized, so the modulation starts
+  from $\gamma^\ell=\beta^\ell=0$. Together with the zero-initialized output
+  projection, this makes the full residual model initialize close to the identity
+  map.
+
+  Let $z^\ell$, $\hat{z}^\ell$, and $z'^\ell$ denote the global, local, and
+  high-frequency hidden representations entering block $\ell$. In the first
+  block, $z^0$ and $\hat{z}^0$ are obtained from the state augmented with grid
+  coordinates, while $z'^0$ is obtained from a high-pass filtered version of the
+  state. The AdaLN modulation is applied only to the global and local pathways:
+  \begin{align}
+    \tilde{z}^\ell
+    &= (1+\gamma^\ell)\odot \operatorname{GN}(z^\ell) + \beta^\ell, \\
+    \tilde{\hat{z}}^\ell
+    &= (1+\gamma^\ell)\odot \operatorname{GN}(\hat{z}^\ell) + \beta^\ell,
+  \end{align}
+  where $\operatorname{GN}$ is non-affine group normalization with one group,
+  used as a channel-wise layer-normalization analogue for 3D feature maps.
+
+  The global branch applies a truncated Fourier operator on the full grid,
+  \begin{equation}
+    g^\ell =
+    \mathrm{MLP}_{\mathrm{outer},g}^{\ell}
+    \left[
+      \sigma\!\left(
+        \mathcal{K}_{g}^{\ell}(\tilde{z}^{\ell})
+        +
+        \mathrm{MLP}_{\mathrm{inner},g}^{\ell}(\tilde{z}^{\ell})
+      \right)
+    \right]
+    +
+    \mathrm{MLP}_{\mathrm{skip},g}^{\ell}(z^\ell).
+  \end{equation}
+  The local branch applies the same structure after partitioning the local hidden
+  state into non-overlapping patches:
+  \begin{align}
+    p^\ell &= \operatorname{Patchify}(\hat{z}^\ell), \\
+    \tilde{p}^\ell &= \operatorname{Patchify}(\tilde{\hat{z}}^\ell), \\
+    r^\ell &=
+    \operatorname{Unpatchify}\!\left(
+    \mathrm{MLP}_{\mathrm{outer},l}^{\ell}
+    \left[
+      \sigma\!\left(
+        \mathcal{K}_{l}^{\ell}(\tilde{p}^{\ell})
+        +
+        \mathrm{MLP}_{\mathrm{inner},l}^{\ell}(\tilde{p}^{\ell})
+      \right)
+    \right]
+    +
+    \mathrm{MLP}_{\mathrm{skip},l}^{\ell}(p^\ell)
+    \right).
+  \end{align}
+  The high-frequency branch is left unmodulated and is modeled with a pointwise
+  MLP,
+  \begin{equation}
+    h^\ell = \mathrm{MLP}_{\mathrm{hf}}^\ell(z'^\ell).
+  \end{equation}
+  The block output is then
+  \begin{equation}
+    z^{\ell+1}
+    =
+    \sigma\!\left(
+      g^\ell + r^\ell + h^\ell
+    \right).
+  \end{equation}
+  Between blocks, the local representation is refreshed from the updated hidden
+  state, and the high-frequency representation is recomputed by applying the
+  high-pass operator to $z^{\ell+1}$. Finally, the model predicts a residual state
+  update,
+  \begin{equation}
+    \hat{\svec}_{t+1}
+    =
+    \svec_t + \mathcal{P}_{\mathrm{out}}(z^L),
+  \end{equation}
+  where $\mathcal{P}_{\mathrm{out}}$ is the output projection.
+
+  Many downstream workflows require well-level quantities in addition to the
+  predicted pressure and temperature fields, such as bottomhole pressure and
+  energy production rate. We therefore attach a lightweight auxiliary head to the
+  surrogate. Importantly, this head does not learn an additional full spatial
+  field. Instead, it uses the known vertical-well geometry and extracts only the
+  state columns that contain wells.
+
+  For each of the 9 fixed well locations, the auxiliary head gathers the full
+  vertical column from both the current state $\svec_t$ and the predicted next
+  state $\hat{\svec}_{t+1}$. Each column contains all 16 depth layers and all
+  4 state channels, so the per-well input has dimension $16 \times 4 \times 2$,
+  where the factor of 2 corresponds to the current and predicted next states. A
+  shared per-well MLP embeds each column, the 9 well embeddings are concatenated,
+  and a final linear layer maps them to the auxiliary target vector:
+  \begin{equation}
+    \mathbf{q}_t
+    =
+    \mathcal{H}_\psi(\svec_t,\hat{\svec}_{t+1})
+    =
+    \mathcal{H}_\psi\!\left(
+      \svec_t,
+      \svec_t + \model(\svec_t,\action_t)
+    \right).
     \label{eq:aux}
   \end{equation}
-  where $\mathcal{H}_\psi$ is a separate auxiliary head. The choice of $\mathbf{q}_t$
-  is problem-specific and can be set to whatever a downstream workflow needs. Here we
-  let $\mathbf{q}_t$ be the bottomhole pressure at each of the 9 wells and the energy
-  production rate at each of the 7 producers (16 values in total).
-  Because the head is trained jointly with the field-prediction model, it learns to read off these quantities from the same latent representation 
-  that drives the state update, and it adds negligible cost at inference relative to the field prediction itself.
-  
+  In this study, $\mathbf{q}_t$ contains the bottomhole pressure at all 9 wells
+  and the energy production rate at the 7 producer wells, giving 16 scalar outputs
+  in total. This design reflects the structure of vertical wells: the relevant
+  diagnostic information is concentrated along the well columns, so the auxiliary
+  head can avoid learning a dense three-dimensional diagnostic field while still
+  being trained jointly with the surrogate state predictor.
+
 
 %---------------------------- 3.3 Model architecture --------------------------
-\subsection{Model Architecture}
-\label{sec:arch}
-
-Following LOGLO-FNO, our model uses three parallel branches to capture global, local, and high-frequency features. Figure~1 illustrates the information flow. The global and local branches share the same block structure but use different Fourier operators. For \(b\in\{\mathrm{global},\mathrm{local}\}\), we define
-\begin{align}
-\mathcal{B}{b}(X)
-={}&\mathrm{MLP}{\mathrm{skip},b}(X) \nonumber\
-&+\mathrm{MLP}{\mathrm{outer},b}!\left[
-  \sigma!\left(
-    \mathrm{MLP}{\mathrm{inner},b}(X)
-    +\mathcal{K}_{b}(X)
-  \right)
-\right].
-\label{eq:branch_block}
-\end{align}
-Here, the inner and skip MLPs are pointwise transformations, while the outer MLP maps the transformed features back to the latent representation.
-\begin{list}{}{}
-\item \textbf{Global branch.}
-The input field is lifted by a pointwise MLP to a higher-dimensional latent space. A global Fourier operator then processes this representation using a truncated set of Fourier modes, as in a standard FNO. This truncation removes high-frequency modes and allows the branch to model the large-scale structure of the field:
-\begin{align}
-\mathcal{Z}{g}
-  &=\mathcal{P}{\mathrm{global}}(\svec_t),\
-\mathcal{Z}{\mathrm{out}}
-  &=\mathcal{B}{\mathrm{global}}(\mathcal{Z}_{g}).
-\end{align}
-\item \textbf{Local branch.}
-The input is divided into spatial patches, and each patch is lifted to a higher-dimensional representation. The patches are processed independently by a local Fourier operator that retains all Fourier modes. The smaller spatial domain and the retained modes allow this branch to capture localized, high-frequency features:
-\begin{align}
-\widehat{\mathcal{Z}}
-  &=\mathcal{P}{\mathrm{local}}!\left(
-    \operatorname{Patchify}(\svec_t)
-  \right),\
-\widehat{\mathcal{Z}}{\mathrm{out}}
-  &=\mathcal{B}_{\mathrm{local}}
-    (\widehat{\mathcal{Z}}).
-\end{align}
-In subsequent blocks, the fused latent representation is patchified before entering the local branch, but the lifting operation is not repeated. The output patches are restored to the original spatial arrangement before branch fusion.
-\item \textbf{High-frequency branch.}
-This branch directly extracts high-frequency information from the latent representation. We first obtain a low-frequency approximation using average pooling and interpolation. Subtracting this approximation from the original representation produces a high-frequency residual, which is then processed by a pointwise MLP:
-\begin{align}
-\mathcal{Z}{\mathrm{low}}
-  &=\operatorname{Interpolate}!\left(
-    \operatorname{AvgPool}(\mathcal{Z}{g})
-  \right),\
-\mathcal{Z}'
-  &=\mathcal{Z}{g}-\mathcal{Z}{\mathrm{low}},\
-\mathcal{Z}'{\mathrm{out}}
-  &=\mathrm{MLP}{\mathrm{hf}}(\mathcal{Z}').
-\end{align}
-This residual is recomputed from the current latent representation in every subsequent block.
-\end{list}
-Finally, the three outputs are brought to the same spatial representation and fused by element-wise addition:
-\begin{align}
-\mathcal{Z}{\mathrm{fused}}
-={}&\mathcal{Z}{\mathrm{out}}
-+\operatorname{Unpatchify}!\left(
-  \widehat{\mathcal{Z}}{\mathrm{out}}
-\right) \nonumber\
-&+\mathcal{Z}'{\mathrm{out}}.
-\end{align}
-The fused representation is passed to the next Fourier block or, after the final block, to the projection layer.
-
-
-
-As discussed in \cref{sec:related}, LoGlo-FNO is well suited to our 3D
-non-isothermal data because it captures both the global trends and the local
-high-frequency features of the fields. We view the well-control action at each
-time step as a conditioning signal that modulates the reservoir dynamics. Under
-this view, rather than concatenating the action with the state and feeding both
-through LoGlo-FNO, it is more natural to learn a rich representation of the action
-and use it to modulate the hidden state, yielding a more flexible and expressive
-model. To this end, we add a modulation encoder that maps the
-action---together with the porosity and permeability fields in the heterogeneous
-dataset---to per-block parameters $\gamma$ and $\beta$. These parameters share the
-shape of the hidden state and modulate it through adaptive LayerNorm
-(AdaLN)~\todo{FiLM/AdaLN citation},
-\begin{equation}
-  \mathrm{AdaLN}(z; \gamma, \beta) = \mathrm{LayerNorm}(z) \odot (1+\gamma) + \beta,
-  \label{eq:adalin}
-\end{equation}
-where $z$ is the hidden state, $\mathrm{LayerNorm}$ normalizes $z$ over the
-channel dimension, $\gamma$ and $\beta$ are per-layer modulation parameters produced by
-the encoder, and $\odot$ denotes element-wise multiplication. We show empirically
-in \cref{sec:ablations} that conditioning the hidden state through this modulation
-encoder outperforms directly concatenating the action with the state.
-
-From the problem discription above, we can formulate it as the model having a residual connection
-and it will satisfy the prediction of delta\_u. From this moment on, we will slightly abuse the notation 
-and write $u_t+1$ hat = $model(u_t, a_t)$
-
 
 \begin{figure}[tb]
   \centering
