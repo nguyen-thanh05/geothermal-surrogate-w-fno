@@ -168,8 +168,14 @@ physics-inspired loss terms to predict 3D pressure and temperature fields across
 20-year horizon. 
 Together, these studies demonstrate that neural surrogates can approximate
 complex geothermal reservoir dynamics across high-dimensional spatial and
-temporal settings.
+temporal settings. However, multiple research questions remain open: What level of performance can we achieve
+using even less training data? It might be more suitable for well scheduling optimization workflows to have a model that predicts the 
+next time step and roll it forward autoregressively, instead of predicting the entire horizon at once. How do we ensure
+such a model remains stable and accurate? What architectural and training modifications can incorporate 
+physical knowledge and improve performance, while staying parameter count-efficient? Can our surrogate model generalize
+to unseen heterogeneous realizations of porosity and permeability?
 
+In this work, we address these questions by adapting the 
 
 
 \todo{state the gap / what is missing in prior work, then the contributions.}
@@ -192,7 +198,7 @@ In this work we:
 \label{sec:methods}
 
 \subsection{Background on Fourier Neural Operator and LOGLO-FNO}
-
+\label{sec:background_fno}
 A neural operator learns a map between function spaces,
 $\mathcal{G}: \mathcal{A}\rightarrow\mathcal{U}$, where $\mathcal{A}$ and
 $\mathcal{U}$ are Banach spaces defined on a bounded domain. Following
@@ -228,11 +234,14 @@ structure efficiently, but it also limits their ability to capture localized
 high-frequency features.
 
 FNOs and related variants have achieved strong performance on a wide variety of
-operator-learning tasks, including [PLACEHOLDER]. However, the standard FNO
+operator-learning tasks, including earth atmosphere modeling \citep{fourcastnet3}, ocean
+circulation prediction \citep{oceancirculation}, carbon storage digital twins 
+\citep{carbonstorage}, and many others. 
+However, the standard FNO
 architecture can struggle when the solution requires localized high-frequency
 detail because the spectral convolution explicitly truncates higher Fourier
 modes. This limitation is important for turbulent flows such as high-Reynolds
-number Navier--Stokes problems and for geothermal reservoir dynamics, where
+number Navier-Stokes problems and for geothermal reservoir dynamics, where
 irregular well controls interact with complex porosity and permeability
 anisotropy. To increase high-frequency modeling capacity, the LOGLO-FNO
 architecture~\citep{loglofno} augments the global FNO branch with local and
@@ -305,11 +314,17 @@ The three branch outputs are fused by element-wise addition and passed through a
 nonlinear activation before entering the next block. After the first block, the
 local branch uses the fused latent representation, and the high-frequency
 residual is recomputed from that same fused representation. Alongside the novel architecture,
-\cite{loglofno} also propose a training loss called \emph{Radially Binned Spectral Loss} to encourage
-the model to sharpen fine details predictions. Together, they achieve an impressive improvement 
-from 12\% to 40\% relative error reduction on multiple benchmarks compared to a standard FNO. In this work,
-we adapt the LOGLO-FNO architecture to our 3D geothermal surrogate modeling task with new well control conditioning and 
-training modifications that lead to stable autoregressive rollouts and strong performance with very limited training data. We describe these modificaitions
+\cite{loglofno} also propose a training loss called \emph{Radially Binned Spectral Loss}, where
+we penalize mid- and high-frequency modes of the error between prediction and ground truth, 
+in order to encourage
+the model to sharpen fine details predictions. 
+Together, they achieve an impressive improvement 
+from 12\% to 40\% relative error reduction on multiple benchmarks 
+compared to a standard FNO. In this work,
+we adapt the LOGLO-FNO architecture to our 3D geothermal surrogate 
+modeling task with new well control conditioning and 
+training modifications that lead to stable autoregressive rollouts 
+and strong performance with very limited training data. We describe these modificaitions
 in detail in \cref{sec:arch}.
 
 
@@ -335,10 +350,22 @@ process of generating random well schedules in section \cref{sec:schedules}.
 
 \begin{figure}[t]
   \centering
-  % \includegraphics[width=0.6\textwidth]{figures/well_pattern.pdf}
-  \todo{well pattern / domain figure}
-  \caption{Stacked inverted five-spot well pattern (2 injectors, 7 producers)
-           and reservoir domain.}
+  \makebox[\textwidth]{%
+    \begin{minipage}[b]{0.40\textwidth}
+      \centering
+      \includegraphics[width=\linewidth,trim=0 0 175bp 0,clip]
+                      {figures/Figure2WellPatternA.png}\\[-0.2em]
+      \textbf{(a)}
+    \end{minipage}\hspace{0.01\textwidth}%
+    \begin{minipage}[b]{0.68\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{figures/Figure2WellPatternB.png}\\[-0.2em]
+      \textbf{(b)}
+    \end{minipage}}
+  \caption{Reservoir domain and stacked inverted five-spot well pattern with
+           two injectors and seven producers. \textbf{(a)} Three-dimensional
+           view of the gridded reservoir domain. \textbf{(b)} Top-down view
+           showing the well locations.}
   \label{fig:well-pattern}
 \end{figure}
 
@@ -346,10 +373,10 @@ process of generating random well schedules in section \cref{sec:schedules}.
 \subsubsection{Porosity, Permeability, and Other Simulation Parameters}
 \label{sec:rock}
 
-We want to create a reservoir with realistic properties. From the Ngatamariki geothermal field, Taupo Volcanic Zone, New Zealand, 
-\cite{} presents matrix porosity ranging from 3\% to 20\%, and matrix permeability from \SI{0.00037}{\milli\darcy} to \SI{0.25}{\milli\darcy}, depending on whether the core
+We want to create a reservoir with realistic properties. From the Ngatamariki geothermal field, Taupo Volcanic Zone, New Zealand, \cite{matrixTaupo}
+presents matrix porosity ranging from 3\% to 20\%, and matrix permeability from \SI{0.00037}{\milli\darcy} to \SI{0.25}{\milli\darcy}, depending on whether the core
 sample is pore-dominated or microfracture-dominated. Also in the Taupo Volcanic Zone, natural fractures in different rock types
-can have permeability ranging from \SI{30}{\milli\darcy} to \SI{130}{\milli\darcy} \cite{}. Inspired by the two studies, for our homogeneous dataset, we choose matrix porosity
+can have permeability ranging from \SI{30}{\milli\darcy} to \SI{130}{\milli\darcy} \citep{fractureTaupo}. Inspired by the two studies, for our homogeneous dataset, we choose matrix porosity
 to be 5\%, matrix permeability \SI{0.1}{\milli\darcy}, fracture porosity 0.5\% and fracture permeability \SI{50}{\milli\darcy}. Other simulation properties are summarized in \cref{tab:sim-props}.
 
 
@@ -455,186 +482,219 @@ test our surrogate model's ability to learn and generalize with limited data.
 
 %---------------------------- 3.2 Problem formulation -------------------------
   \subsection{Model Description}
-  \label{sec:problem}
+\label{sec:arch}
 
-  The surrogate model is trained to predict the next reservoir state from the
-  current pressure-temperature state and the contemporaneous well-control action.
-  Let
-  \[
+The neural surrogate is trained to advance the reservoir state by one weekly time
+step using the current pressure and temperature fields, the contemporaneous
+well-control action, and, when applicable, the static geological properties. We
+define the state at time \(t\) as
+\[
   \svec_t =
   [T_{\text{matrix}}(t), T_{\text{fracture}}(t),
-   P_{\text{matrix}}(t), P_{\text{fracture}}(t)]
-  \]
-  denote the reservoir state at time \(t\), where each component is represented on
-  the \(64 \times 32 \times 16\) three-dimensional grid described above. The
-  control input \(\action_t\) is defined on the same grid and contains two
-  channels: the surface well-rate constraint, duplicated over perforation layers
-  3 through 12, and a binary shut-in indicator, also duplicated over the same
-  perforation interval. The neural surrogate \(\model\) therefore represents the
-  one-step transition map
-  \begin{equation}
-    \svec_{t+1} = \model(\svec_t, \action_t).
-  \end{equation}
+   P_{\text{matrix}}(t), P_{\text{fracture}}(t)],
+\]
+where each component is represented on the \(64 \times 32 \times 16\)
+three-dimensional grid described previously. The control tensor \(\action_t\) is
+defined on the same grid and contains two channels: the surface well-rate
+constraint, replicated over perforation layers 3--12, and a binary shut-in
+indicator, replicated over the same interval. The time-invariant geological
+properties are denoted by
+\(\phi=[\phi_{\text{matrix}},\phi_{\text{fracture}}]\) and
+\(\kappa=[\kappa_{\text{matrix}},\kappa_{\text{fracture}}]\), representing the
+matrix and fracture porosity and permeability fields, respectively. The
+surrogate therefore approximates the one-step transition from
+\((\svec_t,\action_t,\phi,\kappa)\) to \(\svec_{t+1}\).
 
-  Because pressure and temperature evolve smoothly over consecutive weekly time
-  steps, the dominant part of the state remains nearly unchanged from one step to
-  the next, even under randomized well controls. We therefore formulate the model
-  as a residual update, equivalent to an Euler discretization of the reservoir
-  dynamics:
-  \begin{equation}
-    \frac{\svec_{t+1} - \svec_t}{\Delta t}
-    = \model(\svec_t, \action_t).
-    \label{eq:euler}
-  \end{equation}
-  With unit step size \(\Delta t = 1\), this gives
-  \begin{equation}
-    \svec_{t+1} = \svec_t + \model(\svec_t, \action_t).
-    \label{eq:update}
-  \end{equation}
-  This residual parameterization allows the network to focus on the incremental
-  state change induced by the dynamics and well controls, rather than repeatedly
-  reconstructing the large background field. It also corresponds to an explicit
-  skip connection from the input state \(\svec_t\) to the predicted next state
-  \(\svec_{t+1}\) (see Algorithm 2 and Figure 1).
-  
-  It is noteworthy that our formulation assumes Markov property: to predict the next state $\svec_{t+1}$, we only need access to $\svec_t$
-  and $\action_t$, and not the entire history. This is appropriate because the governing mass and energy balance
-  equations are first order in time, so the instantaneous rate of change of the state
-  depends only on the present state and the present well controls. The numerical simulation that we use to generate the data also follows this structure:
-  it advances each time step by solving an implicit linear system assembled solvy from current state and current controls. 
-  Therefore, it is sufficient
-  for the surrogate model to
-  have access to $\svec_t$ and $\action_t$ only, and not the full trajectory up to the prediction point.   
+This formulation assumes that the reservoir dynamics satisfy the Markov
+property: prediction of \(\svec_{t+1}\) requires only the current state
+\(\svec_t\) and current control \(\action_t\), rather than the complete preceding
+trajectory. This assumption is consistent with the governing mass- and
+energy-balance equations, which are first order in time and determine the
+instantaneous state derivative from the present state and controls. The
+numerical simulator used to generate the training data has the same structure,
+advancing each time step by solving an implicit linear system assembled from
+the current state and well controls. Consequently, no earlier states or actions
+are required by the surrogate at the prediction point.
 
-  We adapt the LOGLO-FNO architecture to learn the surrogate transition $\model$.
-  Its local-global decomposition is well aligned with geothermal reservoir dynamics,
-  where pressure and temperature evolution contain both field-scale transport and
-  localized well-driven responses. In our implementation, the reservoir state and
-  well-control action are passed to the network through separate inputs. For the
-  homogeneous case, the state input is $\svec_t$, while the action input contains
-  the well-rate field and a binary well mask. For the heterogeneous case, the
-  static porosity and permeability fields are appended to the state input and are
-  also provided to the action-conditioning pathway.
+Because pressure and temperature vary smoothly between consecutive weekly time
+steps, most of the reservoir state remains nearly unchanged even under
+randomized well controls. We therefore parameterize the surrogate as a residual
+update, analogous to an Euler discretization of the reservoir dynamics:
+\begin{equation}
+  \frac{\hat{\svec}_{t+1}-\svec_t}{\Delta t}
+  =
+  \model(\svec_t,\action_t,\phi,\kappa).
+  \label{eq:euler}
+\end{equation}
+For the unit time step \(\Delta t=1\), the update becomes
+\begin{equation}
+  \hat{\svec}_{t+1}
+  =
+  \svec_t+\model(\svec_t,\action_t,\phi,\kappa).
+  \label{eq:update}
+\end{equation}
+Thus, \(\model\) learns the incremental state change induced by the reservoir
+dynamics and well controls instead of reconstructing the comparatively large
+background field at every step. This parameterization is equivalent to an
+explicit skip connection from \(\svec_t\) to the predicted state
+\(\hat{\svec}_{t+1}\), as illustrated in Algorithm~2 and Figure~1.
 
-  Rather than concatenating the action directly with the dynamic state channels,
-  we condition the LOGLO-FNO blocks through Adaptive Layer Normalization (AdaLN).
-  A convolutional modulation encoder maps the action tensor $\action_t$ to
-  block-wise affine modulation parameters,
-  \begin{equation}
-    \{(\gamma^\ell,\beta^\ell)\}_{\ell=0}^{L-1}
-    = \mathcal{E}_\phi(\action_t),
-  \end{equation}
-  where $\gamma^\ell,\beta^\ell \in
-  \R^{C \times 16 \times 64 \times 32}$ have the same spatial and channel
-  dimensions as the hidden LOGLO-FNO representation. This conditioning strategy
-  follows the FiLM/AdaLN family of modulation methods~\cite{film}. The final
-  convolution in $\mathcal{E}_\phi$ is zero-initialized, so the modulation starts
-  from $\gamma^\ell=\beta^\ell=0$. Together with the zero-initialized output
-  projection, this makes the full residual model initialize close to the identity
-  map.
+We adapt the LOGLO-FNO architecture to represent the residual transition
+\(\model\). Its local--global decomposition is well suited to geothermal
+reservoir dynamics, which combine field-scale transport with localized
+well-induced responses. A straightforward implementation would concatenate the
+four dynamic-state channels in \(\svec_t\), the two control channels in
+\(\action_t\), and the four porosity and permeability channels into a single
+10-channel LOGLO-FNO input. In our experiments, however, this configuration did
+not provide the best performance (Table~\ref{tab:performance}). Instead, we use
+a separate conditioning pathway to encode the well controls and static
+porosity/permeability fields and to modulate the LOGLO-FNO blocks. This design
+improves predictive performance and produces more stable autoregressive
+rollouts. We hypothesize that separate conditioning is advantageous because the
+controls and geological properties are not components of the evolving dynamic
+state and can therefore be represented more effectively as modulators of the
+state update. For the homogeneous dataset, porosity and permeability are
+constant across all samples and are consequently omitted from the model inputs.
 
-  Let $z^\ell$, $\hat{z}^\ell$, and $z'^\ell$ denote the global, local, and
-  high-frequency hidden representations entering block $\ell$. In the first
-  block, $z^0$ and $\hat{z}^0$ are obtained from the state augmented with grid
-  coordinates, while $z'^0$ is obtained from a high-pass filtered version of the
-  state. The AdaLN modulation is applied only to the global and local pathways:
-  \begin{align}
-    \tilde{z}^\ell
-    &= (1+\gamma^\ell)\odot \operatorname{GN}(z^\ell) + \beta^\ell, \\
-    \tilde{\hat{z}}^\ell
-    &= (1+\gamma^\ell)\odot \operatorname{GN}(\hat{z}^\ell) + \beta^\ell,
-  \end{align}
-  where $\operatorname{GN}$ is non-affine group normalization with one group,
-  used as a channel-wise layer-normalization analogue for 3D feature maps.
+Specifically, the LOGLO-FNO blocks are conditioned through Adaptive Layer
+Normalization (AdaLN), rather than by directly concatenating the conditioning
+variables with the dynamic-state channels. Let
+\(\mathbf{c}_t=[\action_t,\phi,\kappa]\) denote the conditioning tensor for the
+heterogeneous case and \(\mathbf{c}_t=\action_t\) for the homogeneous case. The
+modulation encoder is a lightweight CNN with the sequence
+\[
+  \text{MLP}
+  \rightarrow \operatorname{GELU}
+  \rightarrow \operatorname{Conv3D}_{3\times3\times3}
+  \rightarrow \operatorname{GELU}
+  \rightarrow \operatorname{Conv3D}_{3\times3\times3}
+  \rightarrow \operatorname{GELU}
+  \rightarrow \text{MLP},
+\]
+The pointwise MLP layers mix the
+control and geological channels at each grid cell, whereas the two spatial
+convolutions provide a small local receptive field. Consequently,
+the encoder can learn spatially varying interactions between a well action and
+the geological properties of its neighboring cells, thereby estimating how the
+local reservoir response should modify the dynamic-state update. The encoder
+maps these locally informed features to block-specific affine parameters:
+\begin{equation}
+  \{(\gamma^\ell,\beta^\ell)\}_{\ell=0}^{L-1}
+  =
+  \mathcal{E}_{\eta}(\mathbf{c}_t),
+\end{equation}
+where
+\(\gamma^\ell,\beta^\ell\in\R^{C\times16\times64\times32}\) match the channel
+and spatial dimensions of the hidden LOGLO-FNO representation. This
+conditioning mechanism was first introduced by \cite{film} and gains popularity for providing
+a robust way to condition vision transformer architectures for video and image generation.
 
-  The global branch applies a truncated Fourier operator on the full grid,
-  \begin{equation}
-    g^\ell =
-    \mathrm{MLP}_{\mathrm{outer},g}^{\ell}
-    \left[
-      \sigma\!\left(
-        \mathcal{K}_{g}^{\ell}(\tilde{z}^{\ell})
-        +
-        \mathrm{MLP}_{\mathrm{inner},g}^{\ell}(\tilde{z}^{\ell})
-      \right)
-    \right]
-    +
-    \mathrm{MLP}_{\mathrm{skip},g}^{\ell}(z^\ell).
-  \end{equation}
-  The local branch applies the same structure after partitioning the local hidden
-  state into non-overlapping patches:
-  \begin{align}
-    p^\ell &= \operatorname{Patchify}(\hat{z}^\ell), \\
-    \tilde{p}^\ell &= \operatorname{Patchify}(\tilde{\hat{z}}^\ell), \\
-    r^\ell &=
-    \operatorname{Unpatchify}\!\left(
-    \mathrm{MLP}_{\mathrm{outer},l}^{\ell}
-    \left[
-      \sigma\!\left(
-        \mathcal{K}_{l}^{\ell}(\tilde{p}^{\ell})
-        +
-        \mathrm{MLP}_{\mathrm{inner},l}^{\ell}(\tilde{p}^{\ell})
-      \right)
-    \right]
-    +
-    \mathrm{MLP}_{\mathrm{skip},l}^{\ell}(p^\ell)
-    \right).
-  \end{align}
-  The high-frequency branch is left unmodulated and is modeled with a pointwise
-  MLP,
-  \begin{equation}
-    h^\ell = \mathrm{MLP}_{\mathrm{hf}}^\ell(z'^\ell).
-  \end{equation}
-  The block output is then
-  \begin{equation}
-    z^{\ell+1}
-    =
+Let \(z^{(\ell)}\), \(\hat{z}^{(\ell)}\), and \(z'^{(\ell)}\) denote,
+respectively, the global, local, and high-frequency representations entering
+block \(\ell\). AdaLN modulation is applied to the global and local pathways:
+\begin{align}
+  z_{\mathrm{mod}}^{(\ell)}
+  &=
+  (1+\gamma^\ell)\odot\operatorname{LayerNorm}(z^{(\ell)})
+  +\beta^\ell,\\
+  \hat{z}_{\mathrm{mod}}^{(\ell)}
+  &=
+  (1+\gamma^\ell)\odot\operatorname{LayerNorm}(\hat{z}^{(\ell)})
+  +\beta^\ell.
+\end{align}
+The resulting global-branch output is
+\begin{equation}
+  g^{(\ell)}
+  =
+  \mathrm{MLP}_{\mathrm{outer},g}^{\ell}
+  \left[
     \sigma\!\left(
-      g^\ell + r^\ell + h^\ell
-    \right).
-  \end{equation}
-  Between blocks, the local representation is refreshed from the updated hidden
-  state, and the high-frequency representation is recomputed by applying the
-  high-pass operator to $z^{\ell+1}$. Finally, the model predicts a residual state
-  update,
-  \begin{equation}
-    \hat{\svec}_{t+1}
-    =
-    \svec_t + \mathcal{P}_{\mathrm{out}}(z^L),
-  \end{equation}
-  where $\mathcal{P}_{\mathrm{out}}$ is the output projection.
+      \mathcal{K}_{g}^{\ell}(z_{\mathrm{mod}}^{(\ell)})
+      +
+      \mathrm{MLP}_{\mathrm{inner},g}^{\ell}
+      (z_{\mathrm{mod}}^{(\ell)})
+    \right)
+  \right]
+  +
+  \mathrm{MLP}_{\mathrm{skip},g}^{\ell}(z^{(\ell)}),
+\end{equation}
+and the local-branch output is computed analogously:
+\begin{equation}
+  l^{(\ell)}
+  =
+  \mathrm{MLP}_{\mathrm{outer},l}^{\ell}
+  \left[
+    \sigma\!\left(
+      \mathcal{K}_{l}^{\ell}(\hat{z}_{\mathrm{mod}}^{(\ell)})
+      +
+      \mathrm{MLP}_{\mathrm{inner},l}^{\ell}
+      (\hat{z}_{\mathrm{mod}}^{(\ell)})
+    \right)
+  \right]
+  +
+  \mathrm{MLP}_{\mathrm{skip},l}^{\ell}(\hat{z}^{(\ell)}).
+\end{equation}
 
-  Many downstream workflows require well-level quantities in addition to the
-  predicted pressure and temperature fields, such as bottomhole pressure and
-  energy production rate. We therefore attach a lightweight auxiliary head to the
-  surrogate. Importantly, this head does not learn an additional full spatial
-  field. Instead, it uses the known vertical-well geometry and extracts only the
-  state columns that contain wells.
+The high-frequency pathway is not modulated and is represented by a pointwise
+MLP:
+\begin{equation}
+  h^{(\ell)}
+  =
+  \mathrm{MLP}_{\mathrm{hf}}^\ell(z'^{(\ell)}).
+\end{equation}
+This branch is intended to preserve high-frequency details of the dynamic state
+without direct influence from the well controls or static geological fields.
+Following the original LOGLO-FNO formulation described in
+\cref{sec:background_fno}, the three branch outputs are combined as
+\begin{equation}
+  z^{(\ell+1)}
+  =
+  \sigma\!\left(
+    g^{(\ell)}+l^{(\ell)}+h^{(\ell)}
+  \right).
+\end{equation}
+After \(L\) blocks, the
+output projection produces the residual state increment, yielding
+\begin{equation}
+  \hat{\svec}_{t+1}
+  =
+  \svec_t+\mathcal{P}_{\mathrm{out}}(z^L),
+\end{equation}
+where \(\mathcal{P}_{\mathrm{out}}\) denotes the output projection.
 
-  For each of the 9 fixed well locations, the auxiliary head gathers the full
-  vertical column from both the current state $\svec_t$ and the predicted next
-  state $\hat{\svec}_{t+1}$. Each column contains all 16 depth layers and all
-  4 state channels, so the per-well input has dimension $16 \times 4 \times 2$,
-  where the factor of 2 corresponds to the current and predicted next states. A
-  shared per-well MLP embeds each column, the 9 well embeddings are concatenated,
-  and a final linear layer maps them to the auxiliary target vector:
-  \begin{equation}
-    \mathbf{q}_t
-    =
-    \mathcal{H}_\psi(\svec_t,\hat{\svec}_{t+1})
-    =
-    \mathcal{H}_\psi\!\left(
-      \svec_t,
-      \svec_t + \model(\svec_t,\action_t)
-    \right).
-    \label{eq:aux}
-  \end{equation}
-  In this study, $\mathbf{q}_t$ contains the bottomhole pressure at all 9 wells
-  and the energy production rate at the 7 producer wells, giving 16 scalar outputs
-  in total. This design reflects the structure of vertical wells: the relevant
-  diagnostic information is concentrated along the well columns, so the auxiliary
-  head can avoid learning a dense three-dimensional diagnostic field while still
-  being trained jointly with the surrogate state predictor.
+Many downstream applications require well-level quantities in addition to the
+predicted pressure and temperature fields, including bottomhole pressure and
+energy production rate. We therefore augment the surrogate with a lightweight
+auxiliary prediction head. Rather than learning an additional dense spatial
+field, this head exploits the known vertical-well geometry and extracts only the
+state columns containing wells.
+
+For each of the nine fixed well locations, the auxiliary head gathers the
+complete vertical column from both the current state \(\svec_t\) and the
+predicted next state \(\hat{\svec}_{t+1}\). Each column comprises all 16 depth
+layers and four state channels; therefore, the input associated with each well
+has dimension \(16\times4\times2\), where the final factor corresponds to the
+current and predicted states. A shared per-well MLP embeds each column. The nine
+resulting well embeddings are then concatenated and passed through a final
+linear layer to obtain the auxiliary target vector:
+\begin{equation}
+  \mathbf{q}_t
+  =
+  \mathcal{H}_\psi(\svec_t,\hat{\svec}_{t+1})
+  =
+  \mathcal{H}_\psi\!\left(
+    \svec_t,
+    \svec_t+\model(\svec_t,\action_t,\phi,\kappa)
+  \right).
+  \label{eq:aux}
+\end{equation}
+In this study, \(\mathbf{q}_t\) contains the bottomhole pressures at all nine
+wells and the energy production rates at the seven producer wells, for a total
+of 16 scalar outputs. Because the diagnostic information for vertical wells is
+concentrated along their columns, this architecture avoids predicting a dense
+three-dimensional diagnostic field, reduces VRAM requirements, and can still
+be trained jointly with the surrogate state predictor.
+
 
 
 %---------------------------- 3.3 Model architecture --------------------------
@@ -650,17 +710,15 @@ test our surrogate model's ability to learn and generalize with limited data.
 \end{figure}
 
 %---------------------------- 3.4 Training ------------------------------------
-\subsection{Training}
-\label{sec:training}
-\subsubsection{Loss Functions}
+\subsection{Loss Functions}
 The training objective is designed to make the predicted pressure and temperature
 fields match the values produced by the numerical simulator as closely as
 possible. We begin with mean squared error (MSE), since it directly penalizes
 pointwise disagreement between the predicted next state
 \(\hat{\svec}_{t+1}\) and the simulator state \(\svec_{t+1}\). In our
-implementation this term is channel weighted,
-\(\mathbf{w}=(1,1,2,2)\), so the two pressure channels receive twice the weight
-of the two temperature channels. This choice reflects the larger sensitivity of
+implementation, the two pressure channels receive twice the weight
+of the two temperature channels since pressure is more sensitive to well controls. 
+This choice reflects the larger sensitivity of
 the pressure fields to well controls and the importance of matching pressure
 accurately near injectors and producers.
 
@@ -672,25 +730,26 @@ features. This is undesirable for geothermal simulation because several
 important structures are high-frequency or localized: pressure changes near
 wells, thermal fronts, and sharp contrasts induced by the well schedule. To
 directly penalize these errors, we include the radially binned spectral loss used
-in LoGlo-FNO~\citep{loglofno}. The residual
+in LOGLO-FNO~\citep{loglofno}. The residual
 \(\hat{\svec}_{t+1}-\svec_{t+1}\) is transformed to Fourier space, its power is
 grouped into radial frequency bins, and the loss is computed from the middle and
-high frequency bands. We use frequency cutoffs 4 and 12, so the lowest band is
-not included in this term and the spectral loss focuses on the finer spatial
-details that MSE tends to learn more slowly.
+high frequency bands. We penalize mid- and high-frequency errors directly since the low
+frequency components are already handled by the MSE term.
 
-In addition to MSE and spectral loss, we use an \(H^1\) Sobolev loss. This term
+In addition to MSE and radial spectral loss, we use \(H^1\) Sobolev loss. This term
 penalizes not only differences in the field values but also differences in their
-spatial derivatives. We added this loss after observing small grid-aligned stripe
-artifacts, especially in some baseline models. Although these artifacts may
-contribute only weakly to pointwise error, they indicate that the local spatial
-variation of the predicted field is not fully consistent with the simulator.
-The \(H^1\) term helps suppress such artifacts by making the predicted gradients
-closer to the simulator gradients. This is also physically meaningful in our
-setting because finite-difference flux calculations depend on spatial pressure
-and temperature differences between neighboring cells.
+spatial derivatives. Specifically, we calculate the finite difference
+gradients in the \(x\), \(y\), and \(z\) directions for both the predicted and true fields,
+then compute the mean squared error of these gradients. \cite{} show that H1 loss
+further reduces the spectral bias towards low-frequency of neural networks by weighting
+the high-frequency components more. Coincidentally, this loss also has a physical 
+interpretation in our setting: the finite-difference flux
+calculations depend on spatial pressure and temperature differences between neighbouring cells,
+and by penalizing the gradient error, we encourage the model to respect 
+the fluxes between cells.
 
-We further include a material balance equation (MBE) loss. The purpose of this
+On top of H1 loss that encourages the model to respect the local fluxes,
+we further include a material balance equation (MBE) loss. The purpose of this
 term is not to replace the simulator equations, but to provide a coarse physical
 constraint that connects the predicted state change to the well-control action.
 For a given transition from \(\svec_t\) to \(\hat{\svec}_{t+1}\), we compute an
@@ -713,7 +772,8 @@ rates. In normalized form,
 \end{equation}
 where \(A\) is the predicted fluid-mass accumulation, \(Q\) is the net mass
 introduced by the well controls over the step, and \(M_0=10^7\) is a
-characteristic mass used only for scaling. This loss encourages the network to
+characteristic mass used to scale the loss to a reasonable range less
+than one. This loss encourages the network to
 learn a coupled relationship between well rates and the resulting pressure and
 temperature changes, rather than treating the action as an arbitrary input
 feature.
@@ -761,10 +821,30 @@ Combining these terms, the one-step loss is
 \label{eq:step-loss}
 \end{equation}
 The same loss weights are used for the homogeneous and heterogeneous
-experiments, and for all baseline models unless otherwise stated.
+experiments, and for all baseline models. We summarize the purpose of each loss term
+in \cref{tab:loss-purpose}. The loss weights were chosen empirically to balance the
+different terms, and we find our model is not sensitive to small changes in these weights.
+
+\begin{table}[t]
+  \centering
+  \caption{Purpose of each loss function used in the training objective.}
+  \label{tab:loss-purpose}
+  \begin{tabular}{@{}lp{0.68\textwidth}@{}}
+    \toprule
+    Loss function & Purpose \\
+    \midrule
+    MSE, \(\mathcal{L}_{\mathrm{mse}}\) & Pointwise error, low-frequency general trend \\
+    \(H^1\) Sobolev loss, \(\mathcal{L}_{H^1}\) & Reduce low-frequency bias, encourage correct fluxes\\
+    Radial spectral loss, \(\mathcal{L}_{\mathrm{spec}}\) & Mid to high-frequency error, enhance sharp fronts \\
+    Material balance eqn. loss, \(\mathcal{L}_{\mathrm{MBE}}\) & Loose physical constraint \\
+    Mean-field pressure loss, \(\mathcal{L}_{\mathrm{meanP}}\) & Prevent global pressure drifting\\
+    Auxiliary-head MSE, \(\mathcal{L}_{\mathrm{aux}}\) & Predict well-level bottom-hole pressures and energy rates\\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 
-\subsubsection{Stabilizing Autoregressive Rollout with Pushforward Loss}
+\subsection{Stabilizing Autoregressive Rollout with Pushforward Loss}
 For each time step, the model predicts the next state from the current state and
 the current well controls. Even if this one-step prediction is accurate, it will
 still contain some error. Let this error be
@@ -775,8 +855,8 @@ on slightly biased inputs. These small errors can accumulate over many steps and
 eventually move the trajectory away from the distribution seen during ordinary
 one-step training.
 
-The key idea is therefore to train the model to recover from biased states. In
-ideal form, we would like the model to produce an accurate next state even when
+The key idea is therefore to train the model to recover from biased states. Ideally,
+ we would like the model to produce an accurate next state even when
 the input is \(\svec_t+\epsilon_t\) rather than the exact simulator state
 \(\svec_t\). We approximate this situation using two complementary mechanisms:
 adaptive Gaussian noise and a pushforward loss.
@@ -846,9 +926,10 @@ over as many as 10 previous autoregressive steps.
   \label{alg:training}
   \begin{algorithmic}[1]
     \Require Batch containing \(\svec_t,\svec_{t+1},\action_t\), history
-             \(\{\svec_{t-k},\action_{t-k},\ldots,\action_{t-1}\}\), and auxiliary target
+             \(\{\svec_{t-k},\action_{t-k},\ldots,\action_{t-1}\}\), static porosity fields \(\phi\)
+             and permeability fields \(\kappa\),
+             and auxiliary target
              \(\mathbf{q}_{t+1}\)
-    \State Zero non-perforated well-control layers
     \State \(K \gets \min(10,1+\lfloor g/5000 \rfloor)\)
     \State Sample \(k \sim \mathrm{Uniform}\{1,\ldots,K\}\)
     \If{adaptive-noise draw succeeds}
@@ -856,7 +937,7 @@ over as many as 10 previous autoregressive steps.
     \Else
       \State \(\tilde{\svec}_t \gets \svec_t\)
     \EndIf
-    \State \(\hat{\svec}_{t+1} \gets \model(\tilde{\svec}_t,\action_t)\)
+    \State \(\hat{\svec}_{t+1} \gets \model(\tilde{\svec}_t,\action_t, \phi, \kappa)\)
     \State \(\widehat{\mathbf{q}}_{t+1}\gets \mathcal{H}_\psi(\svec_t,\hat{\svec}_{t+1})\)
     \State Compute \(\mathcal{L}_{\mathrm{step}}\) from \cref{eq:step-loss}
     \If{the sample has at least \(k\) previous states}
@@ -892,16 +973,18 @@ heterogeneous datasets.
 
 All inputs and targets are normalized before training. Temperature is min--max
 normalized using the fixed range \([20,185]\ ^\circ\mathrm{C}\), and well rates
-are normalized by the maximum rate of \(5000\). Pressure is also min--max
-normalized, with dataset-specific ranges: \([1900,68000]\) for the homogeneous
-dataset and \([1300,70000]\) for the heterogeneous dataset. For the heterogeneous
+are normalized by the maximum rate of \(5000\) $\mathrm{m}^3/\mathrm{day}$. 
+Pressure is also min--max
+normalized, with dataset-specific ranges: \([1900,68000]\) $\mathrm{kPa}$ for the homogeneous
+dataset and \([1300,70000]\) $\mathrm{kPa}$ for the heterogeneous dataset. 
+For the heterogeneous
 case, the static porosity and permeability fields are normalized using the
-ranges used to generate the dataset. The auxiliary targets are normalized
+ranges used to generate the dataset (\cref{tab:sim-props}). The auxiliary targets are normalized
 separately: bottomhole pressure uses the same pressure normalization as the state
 fields, while energy production rate is normalized with a \(\log(1+x)\)
 transform.
 
-Unless otherwise stated, all models are optimized with AdamW using batch size 4,
+All models are optimized with AdamW \cite{} using batch size 4,
 weight decay \(10^{-4}\), and an initial learning rate of \(8\times 10^{-4}\).
 Each model is trained for 3000 epochs. The learning rate is warmed up linearly
 for 4500 optimizer steps and then follows a cosine decay schedule to a minimum
@@ -909,27 +992,22 @@ learning rate of \(3\times 10^{-4}\). With 300 training trajectories and batch
 size 4, this corresponds to 75 optimizer steps per epoch and 225000 optimizer
 steps in total, so the warmup covers approximately 2\% of training. Gradients
 are clipped before each optimizer step, with architecture-specific thresholds:
-1.0 for FNO and Transolver, and 8.0 for UNet and LoGlo-FNO.
+1.0 for FNO and Transolver as they are more sensitive to gradient instabilities, 
+and 8.0 for UNet and LOGLO-FNO.
 
-We maintain an exponential moving average (EMA) of both the backbone model and
+We maintain an exponential moving average (EMA) \citep{} of both the backbone model and
 the auxiliary head, and use the EMA weights for validation and final
 autoregressive evaluation. The EMA decay is 0.9995, corresponding to a half-life
 of \(\log(0.5)/\log(0.9995)\approx 1386\) optimizer steps. This provides a
 smoothed version of the learned parameters and reduces the effect of abrupt
 updates late in training.
 
-The HPC experiments are run on one H100 40GB GPU with 96GB of allocated memory.
-Because of wall-time limits, experiments are submitted as chained SLURM segments:
-most models use 1000-epoch segments, while Transolver uses shorter 250-epoch
-segments to fit within the wall-time limit. Checkpoints carry the model,
-optimizer, scheduler, EMA, and random-number-generator states between segments.
-Experiments are designed to be repeated over multiple random seeds. For
-reproducibility, the Python, NumPy, PyTorch, CUDA, and data-loader random number
-generators are seeded for each run.
+All experiments are run on 3/8th of an NVIDIA H100 GPU with 96 GB of VRAM provided
+by the Digital Research Alliance of Canada.
 
 \subsection{Baselines}
 \label{sec:baselines}
-We compare LoGlo-FNO against three baseline families that represent common
+We compare LOGLO-FNO against three baseline families that represent common
 choices for structured-grid surrogate modeling: Fourier Neural Operators (FNOs),
 UNet-style convolutional encoder--decoders, and Transolver. All baselines are
 trained on both the homogeneous and heterogeneous datasets using the same loss
