@@ -1,5 +1,9 @@
+sandbox_mode = "workspace-write"
 [shell_environment_policy]
 inherit = "all"
 # Keep this platform-neutral. `.codex/environments/environment.toml`
 # activates the `torch` conda environment and lets conda resolve the
 # machine-specific CONDA_PREFIX/PATH on Windows, macOS, or Linux.
+
+[sandbox_workspace_write]
+network_access = true
