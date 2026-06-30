@@ -17,6 +17,8 @@
 \DeclareSIUnit{\darcy}{D}         % permeability: \si{\milli\darcy} -> mD
 \usepackage{graphicx}
 \usepackage{booktabs}             % \toprule \midrule \bottomrule
+\usepackage{tabularx}             % full-width tables with ragged X column
+\usepackage{array}
 \usepackage{multirow}
 \usepackage{xcolor}
 \usepackage{tikz}
@@ -84,6 +86,7 @@
 
 %------------------------------- Abstract -------------------------------------
 \abstract{%
+\todo{I don't like how this is right now. Will rewrite the abstract when everything is done}
 Geothermal energy is a promising solution to the worldwide growing demand for
 clean energy. Operating geothermal reservoirs requires careful engineering
 decisions, often involving repeated numerical simulation runs to identify
@@ -111,7 +114,7 @@ remains stable autoregressively across 156 time steps.
 \label{sec:intro}
 
 Numerical simulators have been used in geothermal reservoir management for a long
-time, supporting engineering workflows such as history matching, well placement,
+time, enabling engineering workflows such as history matching, well placement,
 well-schedule optimization, uncertainty quantification, and production
 forecasting. Non-isothermal simulators include SHEMAT, FEFLOW, OpenGeoSys,
 ECLIPSE, and STARS, to name a few. While these tools differ in their
@@ -132,37 +135,38 @@ accuracy from a limited number of expensive simulation runs.
 
 
 One line of work addresses surrogate modeling through physics-informed neural
-networks (PINNs). PINNs learn solutions to governing partial differential
-equations by incorporating physical residuals, boundary conditions, and initial
-conditions directly into the training objective through automatic
+networks (PINNs). PINNs learn solutions to partial differential
+equations by modeling physical residuals, boundary conditions, and initial 
+conditions as part of the training objective through automatic
 differentiation. For example,
-\cite{zhaoSurrogateModelingGeothermal2025} develop a PINN model for predicting
+\cite{zhaoSurrogateModelingGeothermal2025} develop a PINN model to predict
 two-dimensional spatiotemporal pressure distributions in an isotropic geothermal
 reservoir where the governing flow equations can be expressed explicitly. Their
 approach improves accuracy near wellbores using hard boundary constraints and
 locally refined spatial sampling. In a related geothermal drilling application,
 \cite{yuanPredictionModelPressure2024} use conservation of mass, momentum, and
-energy in a PINN-based framework to predict transient gas-liquid two-phase flow
+energy in a PINN-based framework to predict two-phase transient gas-liquid flow
 variables, including pressure, temperature, gas volume fraction, gas density,
 liquid density, and gas velocity.
 
-While PINNs are appealing when the governing equations are available in a
+Although PINNs are attractive when the governing equations are available in a
 tractable form, geothermal reservoir simulators often include physical and
-geological complexity that is difficult to represent explicitly in a neural
+geological complexity that is difficult to explicitly represent as a neural
 training objective. Multifractured reservoirs, anisotropic properties,
 dual-porosity or dual-permeability formulations, and complex well controls
-can all make it impractical to write a
+inhibit the ability to write a
 complete differentiable residual. In these settings, data-driven surrogate models
-provide a practical alternative: rather than enforcing the governing equations
-directly, they learn the input-output behavior of the simulator from generated
-trajectory data.
+provide a practical alternative: instead of enforcing the governing equations
+directly, these models learn the input-output behavior of the simulator from generated
+trajectory data. Recent work has demonstrated cautiously optimistic successes 
+of this data driven approach. 
 \cite{liangSurrogateModelingGeothermal} train several deep learning models,
-including UNet and Fourier Neural Operator (FNO) variants, on 1200 anisotropic
+including variants of the UNet and Fourier Neural Operator (FNO), on 1200 anisotropic
 three-dimensional fault-dominated geothermal simulations, and predict 3D
 temperature fields at eight discrete time steps.
 More recently,\cite{xueRobustPhysicsconstrainedNeural2026} construct a substantially larger
 dataset with more than 9000 three-dimensional reservoir simulations over a
-20-year period, varying properties such as reservoir depth, permeability and porosity anisotropic realizations, well controls 
+20-year period, varying properties such as reservoir depth, permeability and porosity anisotropic realizations, well controls, 
 and other geological parameters. Their model adapts the FNO architecture with
 physics-inspired loss terms to predict 3D pressure and temperature fields across the fixed
 20-year horizon. 
@@ -175,23 +179,18 @@ such a model remains stable and accurate? What architectural and training modifi
 physical knowledge and improve performance, while staying parameter count-efficient? Can our surrogate model generalize
 to unseen heterogeneous realizations of porosity and permeability?
 
-In this work, we address these questions by adapting the 
-
-
-\todo{state the gap / what is missing in prior work, then the contributions.}
-
-\subsection{Contributions}
-In this work we:
+In this work, we address these questions by proposing the following contributions:
+\todo{rewrite contributions so it's more obvious what we did}
 \begin{itemize}
-  \item release two 3D dual-porosity geothermal datasets (homogeneous and
+  \item We release two 3D dual-porosity geothermal datasets (homogeneous and
         heterogeneous porosity/permeability) for benchmarking surrogate models;
-  \item adapt the Local--Global Fourier Neural Operator (LoGlo-FNO) to 3D
+  \item We adapt the Local--Global Fourier Neural Operator (LOGLO-FNO) to 3D
         non-isothermal geothermal simulation with several architectural and
         training modifications;
-  \item demonstrate \SI{0.1}{\percent} relative error and stable 156-step
+  \item We demonstrate a mean of less than\SI{2}{\percent} relative error and stable 156-step
         autoregressive rollouts while training on only 300 trajectories;
-  \item \todo{ablations / additional contributions.}
 \end{itemize}
+
 
 %================================ 3. Methods ===================================
 \section{Methods}
@@ -199,7 +198,8 @@ In this work we:
 
 \subsection{Background on Fourier Neural Operator and LOGLO-FNO}
 \label{sec:background_fno}
-A neural operator learns a map between function spaces,
+Much like how neural networks approximate functions, neural operators approximate operators, i.e,
+mappings between function spaces 
 $\mathcal{G}: \mathcal{A}\rightarrow\mathcal{U}$, where $\mathcal{A}$ and
 $\mathcal{U}$ are Banach spaces defined on a bounded domain. Following
 \cite{li2021fno}, a Fourier Neural Operator (FNO) represents this map with
@@ -705,7 +705,7 @@ be trained jointly with the surrogate state predictor.
   % the surrounding \makebox keeps the caption at normal text width.
   \makebox[\textwidth]{%
     \includegraphics[width=\dimexpr\textwidth+1.6in\relax]{figures/loglofno_architecture.pdf}}
-  \caption{TBD}
+  \caption{\todo{Placeholder. Need new figure here}}
   \label{fig:arch}
 \end{figure}
 
@@ -964,6 +964,7 @@ over as many as 10 previous autoregressive steps.
 
 \subsection{Experimental Setup}
 \label{sec:setup}
+While the primary objective is to assess our model's ability to generalize to geological realizations unseen during training, we also benchmark the proposed architecture against baseline models in both homogeneous and heterogeneous settings. This comparison aims to determine whether the incorporation of well schedule and geological property modulation improves the model's capacity to learn reservoir dynamics broadly, and more specifically, its ability to capture interactions arising from heterogeneous porosity and permeability distributions.
 We train and evaluate all models on the homogeneous and heterogeneous datasets
 described in \cref{sec:data}. Each dataset contains 400 simulated trajectories,
 with 156 weekly timesteps per trajectory. Following the split used throughout
@@ -1007,65 +1008,46 @@ by the Digital Research Alliance of Canada.
 
 \subsection{Baselines}
 \label{sec:baselines}
-We compare LOGLO-FNO against three baseline families that represent common
-choices for structured-grid surrogate modeling: Fourier Neural Operators (FNOs),
-UNet-style convolutional encoder--decoders, and Transolver. All baselines are
-trained on both the homogeneous and heterogeneous datasets using the same loss
-terms, optimizer settings, auxiliary head, and autoregressive stabilization
-procedure described in \cref{sec:training,sec:setup}. This keeps the comparison
-focused on the model architecture rather than differences in the training
-pipeline.
-
-The baseline models use the single-tensor input adapter. For the homogeneous
-dataset, the input contains six channels: the four state variables, the well-rate
-field, and the active-well mask. For the heterogeneous dataset, the four static
-porosity and permeability fields are appended, giving ten input channels. In
-contrast, LoGlo-FNO uses the dual-input adapter described in \cref{sec:arch}: the
-state is passed separately from the action, and the action is used to condition
-the hidden state through the modulation encoder.
-
-The FNO baselines use the standard 3D FNO implementation from \texttt{neuralop}
-inside a residual wrapper, so the network predicts a correction to the current
-state. We include three FNO variants to test the effect of spectral resolution,
-depth, and hidden width. The UNet3D baselines are 3D encoder--decoder networks
-with skip connections, group normalization, GELU activations, and a residual
-output connection; we use depth 3 and depth 4 variants. The Transolver baseline
-uses attention over learned physical-state slices on the structured 3D grid,
-with sinusoidal spatial embeddings and a residual output wrapper.
+We compare our well schedule and geological property modulated LOGLO-FNO against strong and 
+relevant structrured-grid surrogate baselines. Specifically, we include 4 base FNO 3D models,
+implemented using the \texttt{neuralop} library, with varying spectral modes and hidden widths to 
+assess the effect of these architectural choices. We further more include 2 UNet3D models with different depths.
+Additionally, we include two Transolver models, which leverage the latest transformer architecture, with varying
+number of slices and hidden widths. Last but not least, we evaluate our model against a vanilla LOGLO-FNO model
+to isolate the effect of our proposed modifications. A summary of the model configurations is provided 
+in \cref{tab:baselines-models}. In terms of parameter counts, all baselines are bigger than 
+our proposed LOGLO-FNO model, except for FNO modes [4, 16, 8] and hidden width 64, and Transolver
+hidden width 128 and slice number 64.
 
 \begin{table}[t]
   \centering
   \caption{Model configurations used in the experiment matrix. Each row is run
-           for both the homogeneous and heterogeneous datasets. LoGlo-FNO is
-           included for context as the proposed model, not as a baseline.}
-  \label{tab:experiment-matrix}
-  \begin{tabular}{p{0.28\textwidth}p{0.20\textwidth}p{0.42\textwidth}}
+           for both the homogeneous and heterogeneous datasets. \emph{Params}
+           are trainable backbone parameters for the homogeneous configuration
+           (auxiliary head excluded), counted with \texttt{torchinfo}. LOGLO-FNO
+           is included for context as the proposed model, not as a baseline.}
+  \label{tab:baselines-models}
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \renewcommand{\arraystretch}{1.1}
+  \begin{tabularx}{\linewidth}{@{}l l r >{\raggedright\arraybackslash}X@{}}
     \toprule
-    Model & Family & Key configuration \\
+    Model & Family & Params & Configuration \\
     \midrule
-    FNO m8x32x16 h64
-      & FNO
-      & modes \([8,32,16]\), 4 layers, hidden width 64 \\
-    FNO m4x16x8 h64
-      & FNO
-      & modes \([4,16,8]\), 5 layers, hidden width 64 \\
-    FNO m4x16x8 h128
-      & FNO
-      & modes \([4,16,8]\), 5 layers, hidden width 128 \\
-    UNet3D d3
-      & UNet3D
-      & depth 3, base hidden width 64 \\
-    UNet3D d4
-      & UNet3D
-      & depth 4, base hidden width 64 \\
-    Transolver
-      & Transolver
-      & 8 layers, hidden width 256, 8 heads, 32 learned slices \\
-    LoGlo-FNO (ours)
-      & LoGlo-FNO
-      & 5 blocks, hidden width 64, action-conditioned modulation \\
+    FNO m4x16x8 h64 & FNO & 11.9M & modes $[4,16,8]$, 5 layers, $h{=}64$ \\
+    FNO m4x16x8 h128 & FNO & 47.6M & modes $[4,16,8]$, 5 layers, $h{=}128$ \\
+    FNO m8x32x16 h64 & FNO & 66.1M & modes $[8,32,16]$, 4 layers, $h{=}64$ \\
+    UNet3D d3 & UNet3D & 22.4M & depth 3, base $h{=}64$ \\
+    UNet3D d4 & UNet3D & 90.3M & depth 4, base $h{=}64$ \\
+    Transolver h128 s64 & Transolver & 7.8M & 8 layers, $h{=}128$, 8 heads, 64 slices \\
+    Transolver h256 s32 & Transolver & 31.2M & 8 layers, $h{=}256$, 8 heads, 32 slices \\
+    \addlinespace[2pt]
+    \midrule[0.2pt]
+    \addlinespace[2pt]
+    Vanilla LOGLO-FNO & LOGLO-FNO & 13.8M & 5 blocks, $h{=}64$, no modulation \\
+    Modulated LOGLO-FNO~(ours) & LOGLO-FNO & 14.1M & 5 blocks, $h{=}64$, modulation \\
     \bottomrule
-  \end{tabular}
+  \end{tabularx}
 \end{table}
 
 \subsection{Evaluation Metrics}
@@ -1092,7 +1074,7 @@ spectral error, auxiliary (BHP, energy rate) error.}
     UNet3D     & & & & \\
     FNO        & & & & \\
     Transolver & & & & \\
-    LoGlo-FNO (ours) & & & & \\
+    LOGLO-FNO (ours) & & & & \\
     \bottomrule
   \end{tabular}
 \end{table}
